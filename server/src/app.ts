@@ -121,6 +121,9 @@ export async function createApp(
     }),
   );
   app.use("/api", api);
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "API route not found" });
+  });
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
@@ -133,7 +136,7 @@ export async function createApp(
     if (uiDist) {
       app.use(express.static(uiDist));
       app.get(/.*/, (_req, res) => {
-        res.sendFile(path.join(uiDist, "index.html"));
+        res.sendFile("index.html", { root: uiDist });
       });
     } else {
       console.warn("[paperclip] UI dist not found; running in API-only mode");

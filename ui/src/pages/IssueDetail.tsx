@@ -406,33 +406,17 @@ export function IssueDetail() {
 
   const updateIssue = useMutation({
     mutationFn: (data: Record<string, unknown>) => issuesApi.update(issueId!, data),
-    onSuccess: (updated) => {
+    onSuccess: () => {
       invalidateIssue();
-      const issueRef = updated.identifier ?? `Issue ${updated.id.slice(0, 8)}`;
-      pushToast({
-        dedupeKey: `activity:issue.updated:${updated.id}`,
-        title: `${issueRef} updated`,
-        body: truncate(updated.title, 96),
-        tone: "success",
-        action: { label: `View ${issueRef}`, href: `/issues/${updated.identifier ?? updated.id}` },
-      });
     },
   });
 
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
-    onSuccess: (comment) => {
+    onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
-      const issueRef = issue?.identifier ?? (issueId ? `Issue ${issueId.slice(0, 8)}` : "Issue");
-      pushToast({
-        dedupeKey: `activity:issue.comment_added:${issueId}:${comment.id}`,
-        title: `Comment posted on ${issueRef}`,
-        body: issue?.title ? truncate(issue.title, 96) : undefined,
-        tone: "success",
-        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
-      });
     },
   });
 
@@ -452,17 +436,9 @@ export function IssueDetail() {
         assigneeUserId: reassignment.assigneeUserId,
         ...(reopen ? { status: "todo" } : {}),
       }),
-    onSuccess: (updated) => {
+    onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
-      const issueRef = updated.identifier ?? (issueId ? `Issue ${issueId.slice(0, 8)}` : "Issue");
-      pushToast({
-        dedupeKey: `activity:issue.reassigned:${updated.id}`,
-        title: `${issueRef} reassigned`,
-        body: issue?.title ? truncate(issue.title, 96) : undefined,
-        tone: "success",
-        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
-      });
     },
   });
 
