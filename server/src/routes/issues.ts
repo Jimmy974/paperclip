@@ -797,7 +797,20 @@ export function issueRoutes(db: Db, storage: StorageService) {
     let interruptedRunId: string | null = null;
     let currentIssue = issue;
 
-    if (reopenRequested && isClosed) {
+    // Resolve @mentions early so we can decide whether reopen should proceed.
+    // If the comment @mentions agents other than the assignee, the user is
+    // directing a conversation — not reopening work for the assignee.
+    let earlyMentionedIds: string[] = [];
+    try {
+      earlyMentionedIds = await svc.findMentionedAgents(issue.companyId, req.body.body);
+    } catch (err) {
+      logger.warn({ err, issueId: id }, "failed to resolve @-mentions for reopen check");
+    }
+    const assigneeId = issue.assigneeAgentId;
+    const mentionsNonAssignee = earlyMentionedIds.length > 0 && (!assigneeId || !earlyMentionedIds.includes(assigneeId));
+    const shouldReopen = reopenRequested && isClosed && !mentionsNonAssignee;
+
+    if (shouldReopen) {
       const reopenedIssue = await svc.update(id, { status: "todo" });
       if (!reopenedIssue) {
         res.status(404).json({ error: "Issue not found" });
