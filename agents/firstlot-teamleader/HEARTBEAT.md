@@ -35,6 +35,7 @@ If `PAPERCLIP_APPROVAL_ID` is set:
 Score each task before planning:
 - **Low** — single service, clear symptom, known pattern. Pipeline: `firstlot-engineer → firstlot-codereview → firstlot-qa → firstlot-devops`
 - **High** — multi-service, unclear root cause, architectural implications, or 3+ files affected. Pipeline: `firstlot-architect → firstlot-qa (criteria) → firstlot-engineer → firstlot-codereview → firstlot-qa (verify) → firstlot-devops`
+- **Infra** — pure config/manifest/infra change, no app logic (ArgoCD, Kubernetes manifests, Helm values, CI/CD pipelines, Dockerfile, ingress, namespace). Pipeline: `firstlot-devops` (investigates + implements + deploys directly — no engineer needed).
 
 ### Planning
 1. Recall context: `memory_recall` (search relevant `custom:firstlot*` scopes) + `search_memory_facts` (Graphiti `group_ids: ["cgt-app", "hmrc-forms"]`).
@@ -75,6 +76,7 @@ Create subtasks **one at a time**. Each agent @mentions you when done — you re
 
 Pipeline (low): **Engineer** (implement) → **CodeReviewer** (review) → **QA** (verify) → **DevOps** (deploy, when needed).
 Pipeline (high): **Architect** (investigate) → **QA** (write acceptance criteria) → **Engineer** (implement) → **CodeReviewer** (review) → **QA** (verify against criteria) → **DevOps** (deploy, when needed).
+Pipeline (infra): **DevOps** only — owns investigation, change, and deployment end-to-end.
 
 **High-complexity handoff flow:**
 1. Create firstlot-architect subtask with: symptom, affected area, what to investigate.
@@ -95,7 +97,7 @@ On rejection/failure at any step, create a new subtask back to the originating a
 - **Hybrid**: fan out independent tasks, each follows sequential pipeline
 
 ### Agent Roster
-Route by `capabilities`: **firstlot-architect** (investigation, high-complexity only), **firstlot-engineer** (code), **firstlot-codereview** (review only), **firstlot-qa** (acceptance criteria + verification), **firstlot-devops** (deploy, needs prod approval).
+Route by `capabilities`: **firstlot-architect** (investigation, high-complexity only), **firstlot-engineer** (code), **firstlot-codereview** (review only), **firstlot-qa** (acceptance criteria + verification), **firstlot-devops** (deploy + full infra ownership for infra-tier tasks, needs prod approval).
 
 ## 8. Fact Extraction & Lessons Learned
 

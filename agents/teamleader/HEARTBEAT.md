@@ -36,6 +36,7 @@ If `PAPERCLIP_APPROVAL_ID` is set:
 Score each task before planning:
 - **Low** — single service, clear symptom, known pattern. Pipeline: `engineer → CodeReviewer → qa → devops`
 - **High** — multi-service, unclear root cause, architectural implications, or 3+ files affected. Pipeline: `architect → qa (criteria) → engineer → CodeReviewer → qa (verify) → devops`
+- **Infra** — pure config/manifest/infra change, no app logic (ArgoCD, Kubernetes manifests, Helm values, CI/CD pipelines, Dockerfile, ingress, namespace). Pipeline: `devops` (investigates + implements + deploys directly — no engineer needed).
 
 ### Planning
 1. Recall context: `memory_recall` (search relevant `custom:portal2*` scopes) + `search_memory_facts` (Graphiti).
@@ -76,6 +77,7 @@ Create subtasks **one at a time**. Each agent @mentions you when done — you re
 
 Pipeline (low): **Engineer** (implement) → **CodeReviewer** (review) → **QA** (verify) → **DevOps** (deploy).
 Pipeline (high): **Architect** (investigate) → **QA** (write acceptance criteria) → **Engineer** (implement) → **CodeReviewer** (review) → **QA** (verify against criteria) → **DevOps** (deploy).
+Pipeline (infra): **DevOps** only — owns investigation, change, and deployment end-to-end.
 
 **High-complexity handoff flow:**
 1. Create architect subtask with: symptom, affected area, what to investigate.
@@ -96,7 +98,7 @@ On rejection/failure at any step, create a new subtask back to the originating a
 - **Hybrid**: fan out independent tasks, each follows sequential pipeline
 
 ### Agent Roster
-Route by `capabilities`: **architect** (investigation, high-complexity only), **workflow** (Temporal workflow issues, state machines, async processing), **engineer** (code), **codereview** (review only), **qa** (test only), **devops** (deploy, needs prod approval).
+Route by `capabilities`: **architect** (investigation, high-complexity only), **workflow** (Temporal workflow issues, state machines, async processing), **engineer** (code), **codereview** (review only), **qa** (test only), **devops** (deploy + full infra ownership for infra-tier tasks, needs prod approval).
 
 ### Workflow-Related Issues
 When an issue involves Temporal workflows, state machines, stuck/failed workflows, activity retries, or async processing:
