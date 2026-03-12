@@ -10,7 +10,6 @@ import {
   Network,
   Settings,
 } from "lucide-react";
-import { useMemo, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -18,53 +17,15 @@ import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
-import { sidebarBadgesApi } from "../api/sidebarBadges";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
+import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
-
-/*
- * TODO: Inbox dismiss state is currently client-side only (localStorage).
- * The sidebar badge is computed server-side, so dismissed items still count
- * toward the badge — causing a mismatch. The workaround below reads the
- * dismissed set from localStorage and subtracts it client-side.
- *
- * Proper fix: add a server-side `inbox_dismissals` table so the badge
- * endpoint can exclude dismissed items per-user. This will also sync
- * dismiss state across devices / browsers.
- */
-const DISMISSED_KEY = "paperclip:inbox:dismissed";
-
-function subscribeToDismissed(callback: () => void) {
-  const handler = (e: StorageEvent) => {
-    if (e.key === DISMISSED_KEY) callback();
-  };
-  window.addEventListener("storage", handler);
-  // Also listen for custom event dispatched from Inbox page on same tab
-  window.addEventListener("inbox:dismissed-changed", callback);
-  return () => {
-    window.removeEventListener("storage", handler);
-    window.removeEventListener("inbox:dismissed-changed", callback);
-  };
-}
-
-function getDismissedSnapshot(): number {
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    return raw ? (JSON.parse(raw) as string[]).length : 0;
-  } catch {
-    return 0;
-  }
-}
 
 export function Sidebar() {
   const { openNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const { data: sidebarBadges } = useQuery({
-    queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
-    queryFn: () => sidebarBadgesApi.get(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
+  const inboxBadge = useInboxBadge(selectedCompanyId);
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.liveRuns(selectedCompanyId!),
     queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
@@ -72,11 +33,6 @@ export function Sidebar() {
     refetchInterval: 10_000,
   });
   const liveRunCount = liveRuns?.length ?? 0;
-  const dismissedCount = useSyncExternalStore(subscribeToDismissed, getDismissedSnapshot);
-  const adjustedInbox = useMemo(
-    () => Math.max(0, (sidebarBadges?.inbox ?? 0) - dismissedCount),
-    [sidebarBadges?.inbox, dismissedCount],
-  );
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
@@ -120,9 +76,9 @@ export function Sidebar() {
             to="/inbox"
             label="Inbox"
             icon={Inbox}
-            badge={adjustedInbox}
-            badgeTone={sidebarBadges?.failedRuns ? "danger" : "default"}
-            alert={(sidebarBadges?.failedRuns ?? 0) > 0 || (sidebarBadges?.assignedToMe ?? 0) > 0}
+            badge={inboxBadge.inbox}
+            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+            alert={inboxBadge.failedRuns > 0}
           />
         </div>
 

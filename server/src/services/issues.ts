@@ -640,19 +640,6 @@ export function issueService(db: Db) {
       if (data.status === "in_progress" && !data.assigneeAgentId && !data.assigneeUserId) {
         throw unprocessable("in_progress issues require an assignee");
       }
-      // Inherit projectId (and goalId) from parent issue when not explicitly provided
-      if (data.parentId && (!issueData.projectId || !issueData.goalId)) {
-        const parent = await db
-          .select({ projectId: issues.projectId, goalId: issues.goalId })
-          .from(issues)
-          .where(eq(issues.id, data.parentId))
-          .then((rows) => rows[0] ?? null);
-        if (parent) {
-          if (!issueData.projectId && parent.projectId) issueData.projectId = parent.projectId;
-          if (!issueData.goalId && parent.goalId) issueData.goalId = parent.goalId;
-        }
-      }
-
       return db.transaction(async (tx) => {
         let executionWorkspaceSettings =
           (issueData.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? null;
@@ -1249,7 +1236,7 @@ export function issueService(db: Db) {
       }),
 
     findMentionedAgents: async (companyId: string, body: string) => {
-      const re = /\B@([^\s@,!?.&]+)/g;
+      const re = /\B@([^\s@,!?.]+)/g;
       const tokens = new Set<string>();
       let m: RegExpExecArray | null;
       while ((m = re.exec(body)) !== null) tokens.add(m[1].toLowerCase());
@@ -1423,40 +1410,6 @@ export function issueService(db: Db) {
         project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
         goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
       }));
-    },
-
-    assignedToUserCount: async (companyId: string, userId: string) => {
-      const result = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(issues)
-        .where(
-          and(
-            eq(issues.companyId, companyId),
-            eq(issues.assigneeUserId, userId),
-            isNull(issues.hiddenAt),
-            inArray(issues.status, ["backlog", "todo", "in_progress", "in_review", "blocked"]),
-          ),
-        )
-        .then((rows) => rows[0]);
-      return Number(result?.count ?? 0);
-    },
-
-    staleCount: async (companyId: string, minutes = 60) => {
-      const cutoff = new Date(Date.now() - minutes * 60 * 1000);
-      const result = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(issues)
-        .where(
-          and(
-            eq(issues.companyId, companyId),
-            eq(issues.status, "in_progress"),
-            isNull(issues.hiddenAt),
-            sql`${issues.startedAt} < ${cutoff.toISOString()}`,
-          ),
-        )
-        .then((rows) => rows[0]);
-
-      return Number(result?.count ?? 0);
     },
   };
 }

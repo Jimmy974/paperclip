@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { activityApi } from "../api/activity";
 import { heartbeatsApi } from "../api/heartbeats";
-import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
-import { useDialog } from "../context/DialogContext";
-import { useToast } from "../context/ToastContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { readIssueDetailBreadcrumb } from "../lib/issueDetailBreadcrumb";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
@@ -43,7 +41,6 @@ import {
   MessageSquare,
   MoreHorizontal,
   Paperclip,
-  Plus,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -150,12 +147,11 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
-  const { openNewIssue } = useDialog();
-  const { pushToast } = useToast();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("comments");
@@ -219,6 +215,10 @@ export function IssueDetail() {
   });
 
   const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
+  const sourceBreadcrumb = useMemo(
+    () => readIssueDetailBreadcrumb(location.state) ?? { label: "Issues", href: "/issues" },
+    [location.state],
+  );
 
   // Filter out runs already shown by the live widget to avoid duplication
   const timelineRuns = useMemo(() => {
@@ -238,12 +238,6 @@ export function IssueDetail() {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-
-  const { data: memberUsers } = useQuery({
-    queryKey: queryKeys.access.memberUsers(selectedCompanyId!),
-    queryFn: () => accessApi.listMemberUsers(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -272,9 +266,6 @@ export function IssueDetail() {
 
   const mentionOptions = useMemo<MentionOption[]>(() => {
     const options: MentionOption[] = [];
-    for (const u of (memberUsers ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
-      options.push({ id: `user:${u.id}`, name: u.name });
-    }
     const activeAgents = [...(agents ?? [])]
       .filter((agent) => agent.status !== "terminated")
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -295,7 +286,7 @@ export function IssueDetail() {
       });
     }
     return options;
-  }, [agents, memberUsers, orderedProjects]);
+  }, [agents, orderedProjects]);
 
   const childIssues = useMemo(() => {
     if (!allIssues || !issue) return [];
@@ -483,17 +474,17 @@ export function IssueDetail() {
   useEffect(() => {
     const titleLabel = issue?.title ?? issueId ?? "Issue";
     setBreadcrumbs([
-      { label: "Issues", href: "/issues" },
+      sourceBreadcrumb,
       { label: hasLiveRuns ? `🔵 ${titleLabel}` : titleLabel },
     ]);
-  }, [setBreadcrumbs, issue, issueId, hasLiveRuns]);
+  }, [setBreadcrumbs, sourceBreadcrumb, issue, issueId, hasLiveRuns]);
 
   // Redirect to identifier-based URL if navigated via UUID
   useEffect(() => {
     if (issue?.identifier && issueId !== issue.identifier) {
-      navigate(`/issues/${issue.identifier}`, { replace: true });
+      navigate(`/issues/${issue.identifier}`, { replace: true, state: location.state });
     }
-  }, [issue, issueId, navigate]);
+  }, [issue, issueId, navigate, location.state]);
 
   useEffect(() => {
     if (!issue?.id) return;
@@ -539,6 +530,7 @@ export function IssueDetail() {
               {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
               <Link
                 to={`/issues/${ancestor.identifier ?? ancestor.id}`}
+                state={location.state}
                 className="hover:text-foreground transition-colors truncate max-w-[200px]"
                 title={ancestor.title}
               >
@@ -573,7 +565,7 @@ export function IssueDetail() {
           {hasLiveRuns && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
               </span>
               Live
@@ -676,7 +668,7 @@ export function IssueDetail() {
           value={issue.description ?? ""}
           onSave={(description) => updateIssue.mutate({ description })}
           as="p"
-          className="text-sm text-muted-foreground"
+          className="text-[15px] leading-7 text-foreground"
           placeholder="Add a description..."
           multiline
           mentions={mentionOptions}
@@ -807,44 +799,35 @@ export function IssueDetail() {
         </TabsContent>
 
         <TabsContent value="subissues">
-          <div className="space-y-3">
-            {childIssues.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No sub-issues.</p>
-            ) : (
-              <div className="border border-border rounded-lg divide-y divide-border">
-                {childIssues.map((child) => (
-                  <Link
-                    key={child.id}
-                    to={`/issues/${child.identifier ?? child.id}`}
-                    className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <StatusIcon status={child.status} />
-                      <PriorityIcon priority={child.priority} />
-                      <span className="font-mono text-muted-foreground shrink-0">
-                        {child.identifier ?? child.id.slice(0, 8)}
-                      </span>
-                      <span className="truncate">{child.title}</span>
-                    </div>
-                    {child.assigneeAgentId && (() => {
-                      const name = agentMap.get(child.assigneeAgentId)?.name;
-                      return name
-                        ? <Identity name={name} size="sm" />
-                        : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
-                    })()}
-                  </Link>
-                ))}
-              </div>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openNewIssue({ parentId: issue.id, projectId: issue.projectId ?? undefined })}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Add sub-issue
-            </Button>
-          </div>
+          {childIssues.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No sub-issues.</p>
+          ) : (
+            <div className="border border-border rounded-lg divide-y divide-border">
+              {childIssues.map((child) => (
+                <Link
+                  key={child.id}
+                  to={`/issues/${child.identifier ?? child.id}`}
+                  state={location.state}
+                  className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <StatusIcon status={child.status} />
+                    <PriorityIcon priority={child.priority} />
+                    <span className="font-mono text-muted-foreground shrink-0">
+                      {child.identifier ?? child.id.slice(0, 8)}
+                    </span>
+                    <span className="truncate">{child.title}</span>
+                  </div>
+                  {child.assigneeAgentId && (() => {
+                    const name = agentMap.get(child.assigneeAgentId)?.name;
+                    return name
+                      ? <Identity name={name} size="sm" />
+                      : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
+                  })()}
+                </Link>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="activity">
@@ -918,7 +901,7 @@ export function IssueDetail() {
               {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
                 <div className="text-xs text-muted-foreground">No cost data yet.</div>
               ) : (
-                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground tabular-nums">
                   {issueCostSummary.hasCost && (
                     <span className="font-medium text-foreground">
                       ${issueCostSummary.cost.toFixed(4)}

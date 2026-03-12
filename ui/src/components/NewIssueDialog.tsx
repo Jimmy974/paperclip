@@ -5,7 +5,6 @@ import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
-import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
@@ -34,9 +33,8 @@ import {
   AlertTriangle,
   Tag,
   Calendar,
-  ListTree,
   Paperclip,
-  User,
+  Loader2,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -200,23 +198,9 @@ export function NewIssueDialog() {
   const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
-  const parentId = newIssueDefaults.parentId ?? null;
-
-  const { data: parentIssue } = useQuery({
-    queryKey: queryKeys.issues.detail(parentId!),
-    queryFn: () => issuesApi.get(parentId!),
-    enabled: !!parentId && newIssueOpen,
-  });
-
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(effectiveCompanyId!),
     queryFn: () => agentsApi.list(effectiveCompanyId!),
-    enabled: !!effectiveCompanyId && newIssueOpen,
-  });
-
-  const { data: memberUsers } = useQuery({
-    queryKey: queryKeys.access.memberUsers(effectiveCompanyId!),
-    queryFn: () => accessApi.listMemberUsers(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
 
@@ -278,9 +262,6 @@ export function NewIssueDialog() {
       issuesApi.create(companyId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(effectiveCompanyId!) });
-      if (parentId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(parentId) });
-      }
       if (draftTimer.current) clearTimeout(draftTimer.current);
       clearDraft();
       reset();
@@ -440,7 +421,7 @@ export function NewIssueDialog() {
   }
 
   function handleSubmit() {
-    if (!effectiveCompanyId || !title.trim()) return;
+    if (!effectiveCompanyId || !title.trim() || createIssue.isPending) return;
     const assigneeAdapterOverrides = buildAssigneeAdapterOverrides({
       adapterType: assigneeAdapterType,
       modelOverride: assigneeModelOverride,
@@ -462,13 +443,8 @@ export function NewIssueDialog() {
       description: description.trim() || undefined,
       status,
       priority: priority || "medium",
-      ...(assigneeId
-        ? assigneeId.startsWith("user:")
-          ? { assigneeUserId: assigneeId.slice(5) }
-          : { assigneeAgentId: assigneeId }
-        : {}),
+      ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
       ...(projectId ? { projectId } : {}),
-      ...(parentId ? { parentId } : {}),
       ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
       ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
     });
@@ -499,9 +475,7 @@ export function NewIssueDialog() {
   const hasDraft = title.trim().length > 0 || description.trim().length > 0;
   const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
   const currentPriority = priorities.find((p) => p.value === priority);
-  const isUserAssignee = assigneeId.startsWith("user:");
-  const currentAssignee = isUserAssignee ? null : (agents ?? []).find((a) => a.id === assigneeId);
-  const currentAssigneeUser = isUserAssignee ? (memberUsers ?? []).find((u) => u.id === assigneeId.slice(5)) : null;
+  const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
   const currentProject = orderedProjects.find((project) => project.id === projectId);
   const currentProjectExecutionWorkspacePolicy = SHOW_EXPERIMENTAL_ISSUE_WORKTREE_UI
     ? currentProject?.executionWorkspacePolicy ?? null
@@ -522,22 +496,18 @@ export function NewIssueDialog() {
         ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
       : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
   const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
-  const assigneeOptions = useMemo<InlineEntityOption[]>(() => {
-    const userOptions: InlineEntityOption[] = (memberUsers ?? []).map((u) => ({
-      id: `user:${u.id}`,
-      label: u.name,
-      searchText: `${u.name} member user`,
-    }));
-    const agentOptions: InlineEntityOption[] = sortAgentsByRecency(
-      (agents ?? []).filter((agent) => agent.status !== "terminated"),
-      recentAssigneeIds,
-    ).map((agent) => ({
-      id: agent.id,
-      label: agent.name,
-      searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-    }));
-    return [...userOptions, ...agentOptions];
-  }, [agents, memberUsers, recentAssigneeIds]);
+  const assigneeOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      sortAgentsByRecency(
+        (agents ?? []).filter((agent) => agent.status !== "terminated"),
+        recentAssigneeIds,
+      ).map((agent) => ({
+        id: agent.id,
+        label: agent.name,
+        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+      })),
+    [agents, recentAssigneeIds],
+  );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
       orderedProjects.map((project) => ({
@@ -547,6 +517,11 @@ export function NewIssueDialog() {
       })),
     [orderedProjects],
   );
+  const savedDraft = loadDraft();
+  const hasSavedDraft = Boolean(savedDraft?.title.trim() || savedDraft?.description.trim());
+  const canDiscardDraft = hasDraft || hasSavedDraft;
+  const createIssueErrorMessage =
+    createIssue.error instanceof Error ? createIssue.error.message : "Failed to create issue. Try again.";
 
   const handleProjectChange = useCallback((nextProjectId: string) => {
     setProjectId(nextProjectId);
@@ -594,7 +569,7 @@ export function NewIssueDialog() {
     <Dialog
       open={newIssueOpen}
       onOpenChange={(open) => {
-        if (!open) closeNewIssue();
+        if (!open && !createIssue.isPending) closeNewIssue();
       }}
     >
       <DialogContent
@@ -607,7 +582,16 @@ export function NewIssueDialog() {
             : "sm:max-w-lg"
         )}
         onKeyDown={handleKeyDown}
+        onEscapeKeyDown={(event) => {
+          if (createIssue.isPending) {
+            event.preventDefault();
+          }
+        }}
         onPointerDownOutside={(event) => {
+          if (createIssue.isPending) {
+            event.preventDefault();
+            return;
+          }
           // Radix Dialog's modal DismissableLayer calls preventDefault() on
           // pointerdown events that originate outside the Dialog DOM tree.
           // Popover portals render at the body level (outside the Dialog), so
@@ -677,7 +661,7 @@ export function NewIssueDialog() {
               </PopoverContent>
             </Popover>
             <span className="text-muted-foreground/60">&rsaquo;</span>
-            <span>{parentId ? "New sub-issue" : "New issue"}</span>
+            <span>New issue</span>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -685,6 +669,7 @@ export function NewIssueDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => setExpanded(!expanded)}
+              disabled={createIssue.isPending}
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
@@ -693,27 +678,12 @@ export function NewIssueDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => closeNewIssue()}
+              disabled={createIssue.isPending}
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
           </div>
         </div>
-
-        {/* Parent badge */}
-        {parentId && (
-          <div className="px-4 pt-3 pb-0 shrink-0">
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-accent/30 px-2 py-1 text-xs text-muted-foreground">
-              <ListTree className="h-3 w-3" />
-              Sub-issue of
-              <span className="font-mono">
-                {parentIssue?.identifier ?? parentId.slice(0, 8)}
-              </span>
-              {parentIssue?.title && (
-                <span className="truncate max-w-[200px]">{parentIssue.title}</span>
-              )}
-            </span>
-          </div>
-        )}
 
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
@@ -727,8 +697,14 @@ export function NewIssueDialog() {
               e.target.style.height = "auto";
               e.target.style.height = `${e.target.scrollHeight}px`;
             }}
+            readOnly={createIssue.isPending}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+              if (
+                e.key === "Enter" &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault();
                 descriptionEditorRef.current?.focus();
               }
@@ -754,7 +730,7 @@ export function NewIssueDialog() {
                 noneLabel="No assignee"
                 searchPlaceholder="Search assignees..."
                 emptyMessage="No assignees found."
-                onChange={(id) => { if (id && !id.startsWith("user:")) trackRecentAssignee(id); setAssigneeId(id); }}
+                onChange={(id) => { if (id) trackRecentAssignee(id); setAssigneeId(id); }}
                 onConfirm={() => {
                   projectSelectorRef.current?.focus();
                 }}
@@ -764,25 +740,12 @@ export function NewIssueDialog() {
                       <AgentIcon icon={currentAssignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">{option.label}</span>
                     </>
-                  ) : option && currentAssigneeUser ? (
-                    <>
-                      <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{option.label}</span>
-                    </>
                   ) : (
                     <span className="text-muted-foreground">Assignee</span>
                   )
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  if (option.id.startsWith("user:")) {
-                    return (
-                      <>
-                        <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{option.label}</span>
-                      </>
-                    );
-                  }
                   const assignee = (agents ?? []).find((agent) => agent.id === option.id);
                   return (
                     <>
@@ -1058,17 +1021,36 @@ export function NewIssueDialog() {
             size="sm"
             className="text-muted-foreground"
             onClick={discardDraft}
-            disabled={!hasDraft && !loadDraft()}
+            disabled={createIssue.isPending || !canDiscardDraft}
           >
             Discard Draft
           </Button>
-          <Button
-            size="sm"
-            disabled={!title.trim() || createIssue.isPending}
-            onClick={handleSubmit}
-          >
-            {createIssue.isPending ? "Creating..." : "Create Issue"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="min-h-5 text-right">
+              {createIssue.isPending ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Creating issue...
+                </span>
+              ) : createIssue.isError ? (
+                <span className="text-xs text-destructive">{createIssueErrorMessage}</span>
+              ) : canDiscardDraft ? (
+                <span className="text-xs text-muted-foreground">Draft autosaves locally</span>
+              ) : null}
+            </div>
+            <Button
+              size="sm"
+              className="min-w-[8.5rem] disabled:opacity-100"
+              disabled={!title.trim() || createIssue.isPending}
+              onClick={handleSubmit}
+              aria-busy={createIssue.isPending}
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                {createIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                <span>{createIssue.isPending ? "Creating..." : "Create Issue"}</span>
+              </span>
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
