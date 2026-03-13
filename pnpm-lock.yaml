@@ -297,6 +297,9 @@ importers:
       '@paperclipai/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@paperclipai/plugin-sdk':
+        specifier: workspace:*
+        version: link:../packages/plugin-sdk
       '@paperclipai/shared':
         specifier: workspace:*
         version: link:../packages/shared
