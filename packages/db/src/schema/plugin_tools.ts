@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, jsonb, unique, timestamp } from "drizzle-orm/pg-core";
 import { plugins } from "./plugins.js";
 
 export const pluginTools = pgTable(
@@ -11,6 +11,8 @@ export const pluginTools = pgTable(
     description: text("description").notNull(),
     parametersSchema: jsonb("parameters_schema").$type<Record<string, unknown>>().notNull(),
     enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     pluginToolNameUniq: unique("plugin_tools_plugin_tool_name_uniq").on(table.pluginId, table.toolName),

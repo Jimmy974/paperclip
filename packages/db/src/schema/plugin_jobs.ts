@@ -12,6 +12,8 @@ export const pluginJobs = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     pluginJobKeyUniq: unique("plugin_jobs_plugin_job_key_uniq").on(table.pluginId, table.jobKey),
