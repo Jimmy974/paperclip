@@ -27,6 +27,7 @@ import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
+import { getEventBus } from "../plugins/event-bus.js";
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
@@ -432,6 +433,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
       details: { title: issue.title, identifier: issue.identifier },
     });
 
+    getEventBus().emit("issue.created", {
+      issueId: issue.id,
+      companyId,
+      title: issue.title,
+      assigneeAgentId: issue.assigneeAgentId ?? undefined,
+      assigneeUserId: issue.assigneeUserId ?? undefined,
+    }).catch(() => {}); // fire-and-forget
+
     if (issue.assigneeAgentId && issue.status !== "backlog") {
       void heartbeat
         .wakeup(issue.assigneeAgentId, {
@@ -540,6 +549,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
       },
     });
 
+    getEventBus().emit("issue.updated", {
+      issueId: issue.id,
+      companyId: issue.companyId,
+      changes: Object.keys(previous),
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+    }).catch(() => {}); // fire-and-forget
+
     let comment = null;
     if (commentBody) {
       comment = await svc.addComment(id, commentBody, {
@@ -564,6 +581,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
           ...(hasFieldChanges ? { updated: true } : {}),
         },
       });
+
+      getEventBus().emit("issue.comment.created", {
+        issueId: issue.id,
+        companyId: issue.companyId,
+        commentId: comment.id,
+        authorAgentId: actor.agentId ?? undefined,
+        authorUserId: actor.actorType === "user" ? actor.actorId : undefined,
+      }).catch(() => {}); // fire-and-forget
 
     }
 
@@ -931,6 +956,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
         ...(interruptedRunId ? { interruptedRunId } : {}),
       },
     });
+
+    getEventBus().emit("issue.comment.created", {
+      issueId: currentIssue.id,
+      companyId: currentIssue.companyId,
+      commentId: comment.id,
+      authorAgentId: actor.agentId ?? undefined,
+      authorUserId: actor.actorType === "user" ? actor.actorId : undefined,
+    }).catch(() => {}); // fire-and-forget
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
     void (async () => {

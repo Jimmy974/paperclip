@@ -18,6 +18,7 @@ import {
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
+import { getEventBus } from "../plugins/event-bus.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
   return {
@@ -103,6 +104,12 @@ export function approvalRoutes(db: Db) {
       details: { type: approval.type, issueIds: uniqueIssueIds },
     });
 
+    getEventBus().emit("approval.created", {
+      approvalId: approval.id,
+      companyId,
+      issueIds: uniqueIssueIds,
+    }).catch(() => {}); // fire-and-forget
+
     res.status(201).json(redactApprovalPayload(approval));
   });
 
@@ -145,6 +152,13 @@ export function approvalRoutes(db: Db) {
           linkedIssueIds,
         },
       });
+
+      getEventBus().emit("approval.decided", {
+        approvalId: approval.id,
+        companyId: approval.companyId,
+        decision: "approved",
+        decisionNote: req.body.decisionNote ?? undefined,
+      }).catch(() => {}); // fire-and-forget
 
       if (approval.requestedByAgentId) {
         try {
@@ -232,6 +246,13 @@ export function approvalRoutes(db: Db) {
         entityId: approval.id,
         details: { type: approval.type },
       });
+
+      getEventBus().emit("approval.decided", {
+        approvalId: approval.id,
+        companyId: approval.companyId,
+        decision: "rejected",
+        decisionNote: req.body.decisionNote ?? undefined,
+      }).catch(() => {}); // fire-and-forget
     }
 
     res.json(redactApprovalPayload(approval));

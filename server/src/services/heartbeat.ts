@@ -33,6 +33,7 @@ import {
   releaseRuntimeServicesForRun,
 } from "./workspace-runtime.js";
 import { issueService } from "./issues.js";
+import { getEventBus } from "../plugins/event-bus.js";
 import {
   buildExecutionWorkspaceAdapterConfig,
   parseIssueExecutionWorkspaceSettings,
@@ -1309,6 +1310,14 @@ export function heartbeatService(db: Db) {
         message: "run started",
       });
 
+      getEventBus().emit("agent.run.started", {
+        agentId: agent.id,
+        agentName: agent.name,
+        runId,
+        reason: readNonEmptyString(context.wakeReason) ?? run.invocationSource ?? null,
+        companyId: agent.companyId,
+      }).catch(() => {}); // fire-and-forget
+
       handle = await runLogStore.begin({
         companyId: run.companyId,
         agentId: run.agentId,
@@ -1607,6 +1616,25 @@ export function heartbeatService(db: Db) {
           }
         }
       }
+      const durationMs = run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : 0;
+      if (outcome === "succeeded") {
+        getEventBus().emit("agent.run.finished", {
+          agentId: agent.id,
+          agentName: agent.name,
+          runId,
+          durationMs,
+          companyId: agent.companyId,
+        }).catch(() => {});
+      } else {
+        getEventBus().emit("agent.run.failed", {
+          agentId: agent.id,
+          agentName: agent.name,
+          runId,
+          error: adapterResult.errorMessage ?? outcome,
+          companyId: agent.companyId,
+        }).catch(() => {});
+      }
+
       await finalizeAgentStatus(agent.id, outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown adapter failure";
@@ -1667,6 +1695,14 @@ export function heartbeatService(db: Db) {
           });
         }
       }
+
+      getEventBus().emit("agent.run.failed", {
+        agentId: agent.id,
+        agentName: agent.name,
+        runId,
+        error: message,
+        companyId: agent.companyId,
+      }).catch(() => {});
 
       await finalizeAgentStatus(agent.id, "failed");
     } finally {
