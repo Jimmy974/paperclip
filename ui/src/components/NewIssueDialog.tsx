@@ -1140,6 +1140,27 @@ export function NewIssueDialog() {
                   );
                 }}
               />
+              <span>under</span>
+              <InlineEntitySelector
+                value={parentId}
+                options={parentOptions}
+                placeholder="Parent"
+                disablePortal
+                noneLabel="No parent"
+                searchPlaceholder="Search by title or ID..."
+                emptyMessage="No issues found."
+                onChange={setParentId}
+                renderTriggerValue={(option) =>
+                  option ? (
+                    <span className="flex items-center gap-1 truncate max-w-[160px]">
+                      <span className="shrink-0 text-muted-foreground">⤴</span>
+                      <span className="truncate">{option.label}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Parent</span>
+                  )
+                }
+              />
             </div>
           </div>
         </div>
