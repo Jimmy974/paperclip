@@ -340,6 +340,13 @@ export function NewIssueDialog() {
       }),
     enabled: Boolean(effectiveCompanyId) && newIssueOpen && Boolean(projectId),
   });
+
+  const { data: allIssues } = useQuery({
+    queryKey: queryKeys.issues.list(effectiveCompanyId!),
+    queryFn: () => issuesApi.list(effectiveCompanyId!, {}),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
+
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -819,6 +826,17 @@ export function NewIssueDialog() {
       })),
     [orderedProjects],
   );
+
+  const parentOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      (allIssues ?? []).map((issue) => ({
+        id: issue.id,
+        label: `${issue.identifier ?? issue.id.slice(0, 8)} ${issue.title}`,
+        searchText: `${issue.identifier ?? issue.id.slice(0, 8)} ${issue.title}`,
+      })),
+    [allIssues],
+  );
+
   const savedDraft = loadDraft();
   const hasSavedDraft = Boolean(savedDraft?.title.trim() || savedDraft?.description.trim());
   const canDiscardDraft = hasDraft || hasSavedDraft;
