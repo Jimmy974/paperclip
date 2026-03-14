@@ -480,6 +480,7 @@ export function NewIssueDialog() {
       assigneeValue,
       projectId,
       projectWorkspaceId,
+      parentId,
       assigneeModelOverride,
       assigneeThinkingEffort,
       assigneeChrome,
@@ -494,6 +495,7 @@ export function NewIssueDialog() {
     assigneeValue,
     projectId,
     projectWorkspaceId,
+    parentId,
     assigneeModelOverride,
     assigneeThinkingEffort,
     assigneeChrome,
@@ -519,6 +521,7 @@ export function NewIssueDialog() {
       const defaultProject = orderedProjects.find((project) => project.id === defaultProjectId);
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(defaultProjectWorkspaceIdForProject(defaultProject));
+      setParentId(newIssueDefaults.parentId ?? "");
       setAssigneeValue(assigneeValueFromSelection(newIssueDefaults));
       setAssigneeModelOverride("");
       setAssigneeThinkingEffort("");
@@ -540,6 +543,7 @@ export function NewIssueDialog() {
       );
       setProjectId(restoredProjectId);
       setProjectWorkspaceId(draft.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(restoredProject));
+      setParentId(newIssueDefaults.parentId ?? draft.parentId ?? "");
       setAssigneeModelOverride(draft.assigneeModelOverride ?? "");
       setAssigneeThinkingEffort(draft.assigneeThinkingEffort ?? "");
       setAssigneeChrome(draft.assigneeChrome ?? false);
@@ -556,6 +560,7 @@ export function NewIssueDialog() {
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(defaultProjectWorkspaceIdForProject(defaultProject));
+      setParentId(newIssueDefaults.parentId ?? "");
       setAssigneeValue(assigneeValueFromSelection(newIssueDefaults));
       setAssigneeModelOverride("");
       setAssigneeThinkingEffort("");
