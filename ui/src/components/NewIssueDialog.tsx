@@ -682,6 +682,7 @@ export function NewIssueDialog() {
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
+      ...(parentId ? { parentId } : {}),
       ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
       ...(executionWorkspacePolicy?.enabled ? { executionWorkspacePreference: executionWorkspaceMode } : {}),
       ...(executionWorkspaceMode === "reuse_existing" && selectedExecutionWorkspaceId
