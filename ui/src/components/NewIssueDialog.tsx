@@ -1150,6 +1150,9 @@ export function NewIssueDialog() {
                 searchPlaceholder="Search by title or ID..."
                 emptyMessage="No issues found."
                 onChange={setParentId}
+                onConfirm={() => {
+                  descriptionEditorRef.current?.focus();
+                }}
                 renderTriggerValue={(option) =>
                   option ? (
                     <span className="flex items-center gap-1 truncate max-w-[160px]">
