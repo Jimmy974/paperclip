@@ -61,45 +61,6 @@ export const RPC_TIMEOUTS: Record<string, number> = {
   shutdown: 10_000,
   runJob: 300_000,
   onEvent: 30_000,
-  handleRequest: 30_000,
   executeTool: 60_000,
   configChanged: 10_000,
-};
-
-/** All known capabilities for validation/documentation */
-export const KNOWN_CAPABILITIES = [
-  "issues.create",
-  "issues.read",
-  "issues.update",
-  "issue.comments.create",
-  "agents.read",
-  "agents.wakeup",
-  "events.subscribe",
-  "events.emit",
-  "jobs.schedule",
-  "routes.handle",
-  "agent.tools.register",
-  "plugin.state.read",
-  "plugin.state.write",
-] as const;
-
-/** Capability required for each SDK method */
-export const METHOD_CAPABILITIES: Record<string, string | null> = {
-  "issues.create": "issues.create",
-  "issues.read": "issues.read",
-  "issues.update": "issues.update",
-  "issues.list": "issues.read",
-  "issues.addComment": "issue.comments.create",
-  "agents.list": "agents.read",
-  "agents.read": "agents.read",
-  "agents.wakeup": "agents.wakeup",
-  "events.emit": "events.emit",
-  "state.get": "plugin.state.read",
-  "state.set": "plugin.state.write",
-  "state.delete": "plugin.state.write",
-  "config.get": null,        // always allowed
-  "logger.debug": null,
-  "logger.info": null,
-  "logger.warn": null,
-  "logger.error": null,
 };

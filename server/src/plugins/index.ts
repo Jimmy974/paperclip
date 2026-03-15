@@ -1,11 +1,12 @@
 import path from "node:path";
 import os from "node:os";
+import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
 import { pluginConfig } from "@paperclipai/db";
 import { scanPluginPackages, syncPluginToDb } from "./loader.js";
 import { ProcessManager } from "./process-manager.js";
-import { createSdkProxy } from "./sdk-proxy.js";
+import { createPluginHandlers } from "./sdk-proxy.js";
 import { EventBus, getEventBus } from "./event-bus.js";
 import { JobScheduler } from "./job-scheduler.js";
 import { pluginRoutes } from "./routes.js";
@@ -35,16 +36,20 @@ export async function initPluginSystem(db: Db): Promise<PluginSystem> {
   const eventBus = getEventBus();
   const jobScheduler = new JobScheduler(db, processManager);
 
-  // Wire SDK proxy
-  const sdkProxy = createSdkProxy(db);
-  processManager.setRequestHandler(sdkProxy);
-
-  // Wire event delivery to process manager
+  // Wire event delivery to process manager using new SDK protocol format
   eventBus.setDeliveryCallback(async (pluginId, eventName, payload, timestamp) => {
     await processManager.call(pluginId, "onEvent", {
-      name: eventName,
-      payload,
-      timestamp,
+      event: {
+        eventId: randomUUID(),
+        eventType: eventName,
+        occurredAt: timestamp,
+        companyId: (payload.companyId as string) ?? "",
+        actorId: payload.actorId as string | undefined,
+        actorType: payload.actorType as "user" | "agent" | "system" | "plugin" | undefined,
+        entityId: (payload.issueId ?? payload.entityId) as string | undefined,
+        entityType: payload.entityType as string | undefined,
+        payload,
+      },
     });
   });
 
@@ -68,11 +73,20 @@ export async function initPluginSystem(db: Db): Promise<PluginSystem> {
         .where(eq(pluginConfig.pluginId, pluginId))
         .limit(1);
 
-      await processManager.spawn(pluginId, scanned.workerEntrypoint, {
+      // Create capability-gated handlers for this plugin
+      const capabilities = (scanned.manifest.capabilities ?? []) as string[];
+      const handlers = createPluginHandlers(db, pluginId, capabilities);
+
+      await processManager.spawn(
         pluginId,
-        manifest: scanned.manifest as unknown as Record<string, unknown>,
-        config: cfgRow?.configJson ?? {},
-      });
+        scanned.workerEntrypoint,
+        {
+          pluginId,
+          manifest: scanned.manifest as unknown as Record<string, unknown>,
+          config: cfgRow?.configJson ?? {},
+        },
+        handlers,
+      );
 
       console.log(`[plugins] loaded ${scanned.manifest.id} (${pluginId})`);
     } catch (err) {

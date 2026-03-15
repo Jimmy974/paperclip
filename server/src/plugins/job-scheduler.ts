@@ -43,11 +43,11 @@ export class JobScheduler {
     const jobs = await this.db
       .select()
       .from(pluginJobs)
-      .where(eq(pluginJobs.enabled, true));
+      .where(eq(pluginJobs.status, "active"));
 
     const now = new Date();
     for (const job of jobs) {
-      const nextRunAt = calculateNextRunAt(job.cron, now);
+      const nextRunAt = calculateNextRunAt(job.schedule, now);
       await this.db
         .update(pluginJobs)
         .set({ nextRunAt })
@@ -64,7 +64,7 @@ export class JobScheduler {
     const jobs = await this.db
       .select()
       .from(pluginJobs)
-      .where(eq(pluginJobs.enabled, true));
+      .where(eq(pluginJobs.status, "active"));
 
     let fired = 0;
 
@@ -97,12 +97,13 @@ export class JobScheduler {
         .values({
           jobId: job.id,
           pluginId: job.pluginId,
+          trigger: "schedule",
           status: "running",
         })
         .returning({ id: pluginJobRuns.id });
 
       // Fire the job asynchronously
-      this.fireJob(job.pluginId, job.id, job.jobKey, run.id, job.cron).catch((err) => {
+      this.fireJob(job.pluginId, job.id, job.jobKey, run.id, job.schedule).catch((err) => {
         console.error(`[plugins:job-scheduler] error firing job ${job.jobKey}:`, err);
       });
 
@@ -121,16 +122,19 @@ export class JobScheduler {
   ): Promise<void> {
     try {
       await this.processManager.call(pluginId, "runJob", {
-        jobKey,
-        triggerSource: "schedule",
-        runId,
+        job: {
+          jobKey,
+          runId,
+          trigger: "schedule",
+          scheduledAt: new Date().toISOString(),
+        },
       });
 
       // Mark completed
       const now = new Date();
       await this.db
         .update(pluginJobRuns)
-        .set({ status: "completed", completedAt: now })
+        .set({ status: "succeeded", finishedAt: now })
         .where(eq(pluginJobRuns.id, runId));
 
       // Update job timing
@@ -147,7 +151,7 @@ export class JobScheduler {
         .update(pluginJobRuns)
         .set({
           status: "failed",
-          completedAt: new Date(),
+          finishedAt: new Date(),
           error: err instanceof Error ? err.message : String(err),
         })
         .where(eq(pluginJobRuns.id, runId));

@@ -5,26 +5,18 @@ import {
   pluginConfig,
   pluginState,
 } from "@paperclipai/db";
-import { METHOD_CAPABILITIES } from "./types.js";
+import {
+  createHostClientHandlers,
+  type HostServices,
+  type HostClientHandlers,
+} from "@paperclipai/plugin-sdk";
+import type { PluginCapability, PluginStateScopeKind } from "@paperclipai/shared";
 
 /**
- * Check if a method is allowed by the plugin's capabilities.
+ * Build a HostServices implementation backed by the Paperclip DB and services.
  */
-export function checkCapability(method: string, capabilities: string[]): boolean {
-  const required = METHOD_CAPABILITIES[method];
-  if (required === null || required === undefined) {
-    // null = always allowed (config.get, logger.*), undefined = unknown method
-    return required === null;
-  }
-  return capabilities.includes(required);
-}
-
-/**
- * Create an SDK proxy that handles worker->host RPC calls.
- * Returns a request handler function to pass to ProcessManager.setRequestHandler().
- */
-export function createSdkProxy(db: Db) {
-  // Import services lazily to avoid circular deps (ESM dynamic import)
+function buildHostServices(db: Db, pluginId: string): HostServices {
+  // Lazy service imports to avoid circular deps
   let servicesPromise: Promise<{
     issues: ReturnType<typeof import("../services/issues.js")["issueService"]>;
     agents: ReturnType<typeof import("../services/agents.js")["agentService"]>;
@@ -46,130 +38,241 @@ export function createSdkProxy(db: Db) {
     return servicesPromise;
   };
 
-  return async function handleSdkCall(
-    pluginId: string,
-    method: string,
-    params: unknown,
-    _id: number | string,
-  ): Promise<unknown> {
-    // Get plugin capabilities
-    const [plugin] = await db
-      .select({ capabilities: plugins.capabilities })
-      .from(plugins)
-      .where(eq(plugins.id, pluginId))
-      .limit(1);
+  function notImplemented(method: string): () => never {
+    return () => { throw new Error(`Plugin host service not implemented: ${method}`); };
+  }
 
-    if (!plugin) throw new Error(`Plugin ${pluginId} not found`);
+  return {
+    config: {
+      async get() {
+        const [cfg] = await db
+          .select({ configJson: pluginConfig.configJson })
+          .from(pluginConfig)
+          .where(eq(pluginConfig.pluginId, pluginId))
+          .limit(1);
+        return cfg?.configJson ?? {};
+      },
+    },
 
-    // Check capability
-    if (!checkCapability(method, plugin.capabilities)) {
-      throw Object.assign(
-        new Error(`capability '${METHOD_CAPABILITIES[method]}' not granted`),
-        { code: -32600 },
-      );
-    }
-
-    const p = (params ?? {}) as Record<string, unknown>;
-
-    // Logger methods — just log and return
-    if (method.startsWith("logger.")) {
-      const level = method.split(".")[1] as string;
-      console.log(`[plugin:${pluginId}:${level}] ${p.message}`, p.data ?? {});
-      return { ok: true };
-    }
-
-    // Config.get — return plugin config
-    if (method === "config.get") {
-      const [cfg] = await db
-        .select({ configJson: pluginConfig.configJson })
-        .from(pluginConfig)
-        .where(eq(pluginConfig.pluginId, pluginId))
-        .limit(1);
-      return cfg?.configJson ?? {};
-    }
-
-    // State methods
-    if (method === "state.get") {
-      const rows = await db
-        .select({ value: pluginState.value })
-        .from(pluginState)
-        .where(
-          and(
-            eq(pluginState.pluginId, pluginId),
-            eq(pluginState.scope, p.scope as string),
-            eq(pluginState.key, p.key as string),
-          ),
-        )
-        .limit(1);
-      return rows[0]?.value ?? null;
-    }
-
-    if (method === "state.set") {
-      const scope = p.scope as string;
-      const key = p.key as string;
-      const value = p.value;
-      await db.insert(pluginState).values({
-        pluginId,
-        scope,
-        key,
-        value: value as any,
-      }).onConflictDoUpdate({
-        target: [pluginState.pluginId, pluginState.scope, pluginState.key],
-        set: { value: value as any, updatedAt: new Date() },
-      });
-      return { ok: true };
-    }
-
-    if (method === "state.delete") {
-      await db.delete(pluginState).where(
-        and(
+    state: {
+      async get(params) {
+        const scopeKind = params.scopeKind as PluginStateScopeKind;
+        const conditions = [
           eq(pluginState.pluginId, pluginId),
-          eq(pluginState.scope, p.scope as string),
-          eq(pluginState.key, p.key as string),
-        ),
-      );
-      return { ok: true };
-    }
+          eq(pluginState.scopeKind, scopeKind),
+          eq(pluginState.stateKey, params.stateKey),
+        ];
+        if (params.scopeId !== undefined && params.scopeId !== null) {
+          conditions.push(eq(pluginState.scopeId, params.scopeId));
+        }
+        if (params.namespace) {
+          conditions.push(eq(pluginState.namespace, params.namespace));
+        }
+        const [row] = await db
+          .select({ valueJson: pluginState.valueJson })
+          .from(pluginState)
+          .where(and(...conditions))
+          .limit(1);
+        return row?.valueJson ?? null;
+      },
 
-    // Service methods — route to real Paperclip services
-    const services = await getServices();
-
-    switch (method) {
-      case "issues.create":
-        return services.issues.create(p.companyId as string, p as any);
-      case "issues.read":
-        return services.issues.getById(p.issueId as string);
-      case "issues.update":
-        return services.issues.update(p.issueId as string, p as any);
-      case "issues.list":
-        return services.issues.list(p.companyId as string, p as any);
-      case "issues.addComment":
-        return services.issues.addComment(p.issueId as string, p.body as string, {
-          agentId: p.agentId as string | undefined,
-          userId: p.userId as string | undefined,
+      async set(params) {
+        const scopeKind = params.scopeKind as PluginStateScopeKind;
+        const scopeId = params.scopeId ?? null;
+        const namespace = params.namespace ?? "default";
+        // Try upsert via insert + on-conflict fallback
+        await db.insert(pluginState).values({
+          pluginId,
+          scopeKind,
+          scopeId,
+          namespace,
+          stateKey: params.stateKey,
+          valueJson: params.value as any,
+        }).catch(async () => {
+          // Insert failed (unique conflict) — update by lookup
+          const conditions = [
+            eq(pluginState.pluginId, pluginId),
+            eq(pluginState.scopeKind, scopeKind),
+            eq(pluginState.stateKey, params.stateKey),
+          ];
+          await db.update(pluginState)
+            .set({ valueJson: params.value as any, updatedAt: new Date() })
+            .where(and(...conditions));
         });
-      case "agents.list":
-        return services.agents.list(p.companyId as string);
-      case "agents.read":
-        return services.agents.getById(p.agentId as string);
-      case "agents.wakeup":
-        return services.heartbeat.wakeup(p.agentId as string, {
-          reason: (p.reason as string) ?? "plugin",
+      },
+
+      async delete(params) {
+        const scopeKind = params.scopeKind as PluginStateScopeKind;
+        const conditions = [
+          eq(pluginState.pluginId, pluginId),
+          eq(pluginState.scopeKind, scopeKind),
+          eq(pluginState.stateKey, params.stateKey),
+        ];
+        if (params.scopeId !== undefined && params.scopeId !== null) {
+          conditions.push(eq(pluginState.scopeId, params.scopeId));
+        }
+        await db.delete(pluginState).where(and(...conditions));
+      },
+    },
+
+    entities: {
+      async upsert(_params) {
+        throw new Error("Plugin host service not implemented: entities.upsert");
+      },
+      async list(_params) {
+        throw new Error("Plugin host service not implemented: entities.list");
+      },
+    },
+
+    events: {
+      async emit(params) {
+        // Import event bus dynamically to avoid circular deps
+        const { getEventBus } = await import("./event-bus.js");
+        const eventName = `plugin.${pluginId}.${params.name}`;
+        await getEventBus().emit(eventName, params.payload as Record<string, unknown>);
+      },
+    },
+
+    http: {
+      async fetch(params) {
+        const res = await fetch(params.url, {
+          method: (params.init?.method as string) ?? "GET",
+          headers: params.init?.headers as HeadersInit | undefined,
+          body: params.init?.body as BodyInit | undefined,
+        });
+        const body = await res.text();
+        const headers: Record<string, string> = {};
+        res.headers.forEach((v, k) => { headers[k] = v; });
+        return { status: res.status, statusText: res.statusText, headers, body };
+      },
+    },
+
+    secrets: {
+      async resolve(_params) {
+        throw new Error("Plugin host service not implemented: secrets.resolve");
+      },
+    },
+
+    activity: {
+      async log(_params) {
+        // Silently no-op for now
+      },
+    },
+
+    metrics: {
+      async write(_params) {
+        // Silently no-op for now
+      },
+    },
+
+    logger: {
+      async log(params) {
+        console.log(`[plugin:${pluginId}:${params.level}] ${params.message}`, params.meta ?? {});
+      },
+    },
+
+    companies: {
+      async list(_params) { return []; },
+      async get(_params) { return null; },
+    },
+
+    projects: {
+      async list(_params) { return []; },
+      async get(_params) { return null; },
+      async listWorkspaces(_params) { return []; },
+      async getPrimaryWorkspace(_params) { return null; },
+      async getWorkspaceForIssue(_params) { return null; },
+    },
+
+    issues: {
+      async list(params) {
+        const svc = await getServices();
+        return svc.issues.list(params.companyId, params as any) as any;
+      },
+      async get(params) {
+        const svc = await getServices();
+        return svc.issues.getById(params.issueId) as any;
+      },
+      async create(params) {
+        const svc = await getServices();
+        return svc.issues.create(params.companyId, params as any) as any;
+      },
+      async update(params) {
+        const svc = await getServices();
+        return svc.issues.update(params.issueId, params.patch as any) as any;
+      },
+      async listComments(_params) { return []; },
+      async createComment(params) {
+        const svc = await getServices();
+        return svc.issues.addComment(params.issueId, params.body, {}) as any;
+      },
+    },
+
+    agents: {
+      async list(params) {
+        const svc = await getServices();
+        return svc.agents.list(params.companyId) as any;
+      },
+      async get(params) {
+        const svc = await getServices();
+        return svc.agents.getById(params.agentId) as any;
+      },
+      async pause(_params) {
+        throw new Error("Plugin host service not implemented: agents.pause");
+      },
+      async resume(_params) {
+        throw new Error("Plugin host service not implemented: agents.resume");
+      },
+      async invoke(params) {
+        const svc = await getServices();
+        return svc.heartbeat.wakeup(params.agentId, {
+          reason: params.reason ?? "plugin",
           source: "automation",
           triggerDetail: "system",
-          contextSnapshot: p.payload as Record<string, unknown>,
-        });
-      case "events.emit": {
-        // Plugin events use plugin.* namespace — wire through event bus
-        // event-bus.js is created in Task 9; dynamic import defers resolution
-        // @ts-ignore — event-bus.js does not exist yet (Task 9)
-        const { getEventBus } = await import("./event-bus.js");
-        const eventName = `plugin.${pluginId}.${p.name}`;
-        await getEventBus().emit(eventName, p.payload as Record<string, unknown>);
-        return { ok: true };
-      }
-      default:
-        throw new Error(`unknown SDK method: ${method}`);
-    }
+          contextSnapshot: {},
+        }) as any;
+      },
+    },
+
+    agentSessions: {
+      async create(_params) {
+        throw new Error("Plugin host service not implemented: agentSessions.create");
+      },
+      async list(_params) { return []; },
+      async sendMessage(_params) {
+        throw new Error("Plugin host service not implemented: agentSessions.sendMessage");
+      },
+      async close(_params) {
+        // no-op
+      },
+    },
+
+    goals: {
+      async list(_params) { return []; },
+      async get(_params) { return null; },
+      async create(_params) {
+        throw new Error("Plugin host service not implemented: goals.create");
+      },
+      async update(_params) {
+        throw new Error("Plugin host service not implemented: goals.update");
+      },
+    },
   };
+}
+
+/**
+ * Create capability-gated host client handlers for a plugin.
+ * Pass the returned handlers to ProcessManager.spawn().
+ */
+export function createPluginHandlers(
+  db: Db,
+  pluginId: string,
+  capabilities: string[],
+): HostClientHandlers {
+  const services = buildHostServices(db, pluginId);
+  return createHostClientHandlers({
+    pluginId,
+    capabilities: capabilities as PluginCapability[],
+    services,
+  });
 }

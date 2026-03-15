@@ -7,8 +7,8 @@ import {
   plugins,
   pluginConfig,
   pluginJobs,
-  pluginTools,
 } from "@paperclipai/db";
+import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import { validateManifest, type ValidatedManifest } from "./types.js";
 
 export interface ScannedPlugin {
@@ -122,11 +122,9 @@ export async function syncPluginToDb(
     await db
       .update(plugins)
       .set({
-        displayName: manifest.displayName,
         version: manifest.version,
-        capabilities: manifest.capabilities,
-        manifest: manifest as unknown as Record<string, unknown>,
-        installPath,
+        manifestJson: manifest as unknown as PaperclipPluginManifestV1,
+        packagePath: installPath,
         status: "installed",
         updatedAt: new Date(),
       })
@@ -136,11 +134,10 @@ export async function syncPluginToDb(
       .insert(plugins)
       .values({
         pluginKey: manifest.id,
-        displayName: manifest.displayName,
+        packageName: manifest.id,
         version: manifest.version,
-        capabilities: manifest.capabilities,
-        manifest: manifest as unknown as Record<string, unknown>,
-        installPath,
+        manifestJson: manifest as unknown as PaperclipPluginManifestV1,
+        packagePath: installPath,
         status: "installed",
       })
       .returning({ id: plugins.id });
@@ -170,16 +167,14 @@ export async function syncPluginToDb(
         await db
           .update(pluginJobs)
           .set({
-            displayName: job.displayName,
-            cron: job.cron,
+            schedule: job.cron,
           })
           .where(eq(pluginJobs.id, prev.id));
       } else {
         await db.insert(pluginJobs).values({
           pluginId,
           jobKey: job.id,
-          displayName: job.displayName,
-          cron: job.cron,
+          schedule: job.cron,
         });
       }
     }
@@ -188,47 +183,6 @@ export async function syncPluginToDb(
     for (const [key, job] of existingByKey) {
       if (!declaredKeys.has(key)) {
         await db.delete(pluginJobs).where(eq(pluginJobs.id, job.id));
-      }
-    }
-  }
-
-  // Sync tools
-  if (manifest.tools?.length) {
-    const existingTools = await db
-      .select()
-      .from(pluginTools)
-      .where(eq(pluginTools.pluginId, pluginId));
-
-    const existingByName = new Map(existingTools.map((t) => [t.toolName, t]));
-    const declaredNames = new Set(manifest.tools.map((t) => `${manifest.id}:${t.name}`));
-
-    for (const tool of manifest.tools) {
-      const fullName = `${manifest.id}:${tool.name}`;
-      const prev = existingByName.get(fullName);
-      if (prev) {
-        await db
-          .update(pluginTools)
-          .set({
-            displayName: tool.displayName,
-            description: tool.description,
-            parametersSchema: tool.parametersSchema,
-          })
-          .where(eq(pluginTools.id, prev.id));
-      } else {
-        await db.insert(pluginTools).values({
-          pluginId,
-          toolName: fullName,
-          displayName: tool.displayName,
-          description: tool.description,
-          parametersSchema: tool.parametersSchema,
-        });
-      }
-    }
-
-    // Delete stale tools
-    for (const [name, tool] of existingByName) {
-      if (!declaredNames.has(name)) {
-        await db.delete(pluginTools).where(eq(pluginTools.id, tool.id));
       }
     }
   }

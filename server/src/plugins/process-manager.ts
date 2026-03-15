@@ -1,7 +1,22 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { RpcChannel } from "@paperclipai/plugin-sdk";
+import { createInterface } from "node:readline";
+import {
+  createRequest,
+  createSuccessResponse,
+  createErrorResponse,
+  parseMessage,
+  serializeMessage,
+  isJsonRpcRequest,
+  isJsonRpcResponse,
+  isJsonRpcNotification,
+  isJsonRpcSuccessResponse,
+  isJsonRpcErrorResponse,
+  JSONRPC_ERROR_CODES,
+  PLUGIN_RPC_ERROR_CODES,
+  type HostClientHandlers,
+} from "@paperclipai/plugin-sdk";
 import { RPC_TIMEOUTS } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -10,7 +25,6 @@ const tsxBin = path.resolve(__dirname, "../../node_modules/.bin/tsx");
 export interface PluginWorkerEntry {
   pluginId: string;
   process: ChildProcess;
-  rpc: RpcChannel;
   status: "starting" | "ready" | "error" | "stopping";
   restartCount: number;
   lastRestartAt?: Date;
@@ -28,22 +42,11 @@ interface InitializeParams {
 
 export class ProcessManager {
   private workers = new Map<string, PluginWorkerEntry>();
-  private requestHandler?: (
-    pluginId: string,
-    method: string,
-    params: unknown,
-    id: number | string,
-  ) => Promise<unknown>;
-
-  /**
-   * Set handler for worker->host SDK calls.
-   * Called by the SDK proxy.
-   */
-  setRequestHandler(
-    handler: (pluginId: string, method: string, params: unknown, id: number | string) => Promise<unknown>,
-  ) {
-    this.requestHandler = handler;
-  }
+  // Internal call function per worker (closure, not on the entry)
+  private workerCalls = new Map<
+    string,
+    (method: string, params: unknown, timeoutMs: number) => Promise<unknown>
+  >();
 
   /**
    * Spawn a plugin worker process and send initialize.
@@ -52,6 +55,7 @@ export class ProcessManager {
     pluginId: string,
     workerEntrypoint: string,
     initParams: InitializeParams,
+    handlers: HostClientHandlers,
     opts?: SpawnOptions,
   ): Promise<void> {
     const child = spawn(tsxBin, [workerEntrypoint], {
@@ -65,24 +69,97 @@ export class ProcessManager {
       console.log(`[plugin:${pluginId}:stderr] ${chunk.trimEnd()}`);
     });
 
-    const rpc = new RpcChannel(child.stdout!, child.stdin!);
+    // Pending outbound (host→worker) requests
+    const pending = new Map<
+      number,
+      { resolve: (r: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+    >();
+    let nextId = 1;
 
-    // Route worker->host calls through the SDK proxy handler
-    rpc.setRequestHandler(async (method, params, id) => {
-      if (!this.requestHandler) {
-        throw new Error("no SDK proxy handler registered");
-      }
-      return this.requestHandler(pluginId, method, params, id);
-    });
+    function send(message: unknown): void {
+      child.stdin!.write(serializeMessage(message as any));
+    }
+
+    function callWorker(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`Plugin ${pluginId}: call "${method}" timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        send(createRequest(method, params, id));
+      });
+    }
 
     const entry: PluginWorkerEntry = {
       pluginId,
       process: child,
-      rpc,
       status: "starting",
       restartCount: 0,
     };
     this.workers.set(pluginId, entry);
+    this.workerCalls.set(pluginId, callWorker);
+
+    // Read JSON-RPC messages from worker stdout
+    const rl = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+
+    rl.on("line", async (line: string) => {
+      if (!line.trim()) return;
+
+      let message: unknown;
+      try {
+        message = parseMessage(line);
+      } catch {
+        console.warn(`[plugin:${pluginId}] invalid message: ${line.substring(0, 100)}`);
+        return;
+      }
+
+      if (isJsonRpcResponse(message)) {
+        // Response to an outbound host→worker call
+        const id = (message as any).id as number;
+        const p = pending.get(id);
+        if (!p) return;
+        clearTimeout(p.timer);
+        pending.delete(id);
+        if (isJsonRpcSuccessResponse(message)) {
+          p.resolve((message as any).result);
+        } else if (isJsonRpcErrorResponse(message)) {
+          p.reject(new Error((message as any).error?.message ?? "Unknown RPC error"));
+        }
+      } else if (isJsonRpcRequest(message)) {
+        // Worker→Host call — route through createHostClientHandlers
+        const req = message as any;
+        const method = req.method as string;
+        const params = req.params;
+        const id = req.id;
+
+        try {
+          const handler = (handlers as any)[method] as ((p: unknown) => Promise<unknown>) | undefined;
+          if (!handler) {
+            send(createErrorResponse(id, JSONRPC_ERROR_CODES.METHOD_NOT_FOUND, `Unknown method: ${method}`));
+            return;
+          }
+          const result = await handler(params);
+          send(createSuccessResponse(id, result ?? null));
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const code: number =
+            typeof (err as any)?.code === "number"
+              ? (err as any).code
+              : PLUGIN_RPC_ERROR_CODES.WORKER_ERROR;
+          send(createErrorResponse(id, code, errorMessage));
+        }
+      } else if (isJsonRpcNotification(message)) {
+        // Notifications from worker (e.g. "log")
+        const notif = message as any;
+        if (notif.method === "log" && notif.params) {
+          const { level, message: msg, meta } = notif.params;
+          console.log(`[plugin:${pluginId}:${level}] ${msg}`, meta ?? {});
+        }
+        // streams.open / streams.emit / streams.close — ignored for now
+      }
+    });
 
     // Handle unexpected exit
     child.on("exit", (code, signal) => {
@@ -90,20 +167,24 @@ export class ProcessManager {
       if (current && current.status !== "stopping") {
         console.warn(`[plugins] worker ${pluginId} exited unexpectedly (code=${code}, signal=${signal})`);
         current.status = "error";
-        rpc.destroy();
+        rl.close();
       }
     });
 
     // Send initialize
     const timeout = opts?.initTimeoutMs ?? RPC_TIMEOUTS.initialize;
     try {
-      await rpc.call("initialize", initParams, timeout);
+      await callWorker("initialize", {
+        manifest: initParams.manifest,
+        config: initParams.config,
+      }, timeout);
       entry.status = "ready";
     } catch (err) {
       entry.status = "error";
-      rpc.destroy();
+      rl.close();
       child.kill("SIGKILL");
       this.workers.delete(pluginId);
+      this.workerCalls.delete(pluginId);
       throw new Error(
         `Plugin ${pluginId} failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -125,8 +206,10 @@ export class ProcessManager {
     if (!entry || entry.status !== "ready") {
       throw new Error(`Plugin ${pluginId} is not ready (status: ${entry?.status ?? "not found"})`);
     }
+    const callWorker = this.workerCalls.get(pluginId);
+    if (!callWorker) throw new Error(`No call function for plugin ${pluginId}`);
     const timeout = RPC_TIMEOUTS[method] ?? 30_000;
-    return entry.rpc.call(method, params, timeout);
+    return callWorker(method, params, timeout);
   }
 
   /**
@@ -138,13 +221,14 @@ export class ProcessManager {
 
     entry.status = "stopping";
 
-    try {
-      await entry.rpc.call("shutdown", {}, RPC_TIMEOUTS.shutdown);
-    } catch {
-      // Timeout or error — force kill
+    const callWorker = this.workerCalls.get(pluginId);
+    if (callWorker) {
+      try {
+        await callWorker("shutdown", {}, RPC_TIMEOUTS.shutdown);
+      } catch {
+        // Timeout or error — force kill
+      }
     }
-
-    entry.rpc.destroy();
 
     // Give the process time to exit, then force
     await new Promise<void>((resolve) => {
@@ -163,6 +247,7 @@ export class ProcessManager {
     });
 
     this.workers.delete(pluginId);
+    this.workerCalls.delete(pluginId);
   }
 
   /**
