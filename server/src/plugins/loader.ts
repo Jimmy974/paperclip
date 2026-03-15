@@ -86,10 +86,14 @@ export async function scanPluginPackages(pluginsDir: string): Promise<ScannedPlu
         ? path.resolve(pkgDir, pluginEntry.worker)
         : path.resolve(pkgDir, validation.data.entrypoints.worker);
 
+      // Resolve symlinks so that process.argv[1] matches import.meta.url
+      // inside the worker (runWorker() uses this check to detect the entrypoint).
+      const resolvedWorkerPath = fs.realpathSync(workerPath);
+
       results.push({
         manifest: validation.data,
         installPath: pkgDir,
-        workerEntrypoint: workerPath,
+        workerEntrypoint: resolvedWorkerPath,
       });
     } catch (err) {
       console.warn(`[plugins] failed to load manifest from ${manifestPath}:`, err);
