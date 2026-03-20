@@ -131,6 +131,9 @@ function buildHostServices(db: Db, pluginId: string): HostServices {
         const eventName = `plugin.${pluginId}.${params.name}`;
         await getEventBus().emit(eventName, params.payload as Record<string, unknown>);
       },
+      async subscribe(_params) {
+        throw new Error("Plugin host service not implemented: events.subscribe");
+      },
     },
 
     http: {
@@ -255,6 +258,17 @@ function buildHostServices(db: Db, pluginId: string): HostServices {
       },
       async update(_params) {
         throw new Error("Plugin host service not implemented: goals.update");
+      },
+    },
+
+    issueDocuments: {
+      async list(_params) { return []; },
+      async get(_params) { return null; },
+      async upsert(_params) {
+        throw new Error("Plugin host service not implemented: issueDocuments.upsert");
+      },
+      async delete(_params) {
+        throw new Error("Plugin host service not implemented: issueDocuments.delete");
       },
     },
   };
