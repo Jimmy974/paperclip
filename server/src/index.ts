@@ -30,7 +30,8 @@ import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup } from "./
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
-import { initPluginSystem } from "./plugins/index.js";
+// Fork plugin system removed — using upstream plugin-loader/plugin-host-services
+// import { initPluginSystem } from "./plugins/index.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -476,22 +477,7 @@ export async function startServer(): Promise<StartedServer> {
     authReady = true;
   }
   
-  // Plugin system initialization
-  let pluginSystem: Awaited<ReturnType<typeof initPluginSystem>> | null = null;
-  try {
-    pluginSystem = await initPluginSystem(db as any);
-
-    // Job scheduler tick — every 15 seconds
-    setInterval(() => {
-      void pluginSystem!.jobScheduler.tick().catch((err) => {
-        logger.error({ err }, "plugin job scheduler tick failed");
-      });
-    }, 15_000);
-
-    logger.info("Plugin system initialized");
-  } catch (err) {
-    logger.error({ err }, "Plugin system failed to initialize — continuing without plugins");
-  }
+  // Fork plugin system removed — upstream plugin system handles this via createApp()
 
   const listenPort = await detectPort(config.port);
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
@@ -508,7 +494,7 @@ export async function startServer(): Promise<StartedServer> {
     companyDeletionEnabled: config.companyDeletionEnabled,
     betterAuthHandler,
     resolveSession,
-    pluginRouter: pluginSystem?.router,
+    // pluginRouter handled by upstream plugin system in createApp()
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
   

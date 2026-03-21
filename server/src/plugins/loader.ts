@@ -162,23 +162,23 @@ export async function syncPluginToDb(
       .where(eq(pluginJobs.pluginId, pluginId));
 
     const existingByKey = new Map(existingJobs.map((j) => [j.jobKey, j]));
-    const declaredKeys = new Set(manifest.jobs.map((j) => j.id));
+    const declaredKeys = new Set(manifest.jobs.map((j) => j.jobKey));
 
     // Insert or update declared jobs
     for (const job of manifest.jobs) {
-      const prev = existingByKey.get(job.id);
+      const prev = existingByKey.get(job.jobKey);
       if (prev) {
         await db
           .update(pluginJobs)
           .set({
-            schedule: job.cron,
+            schedule: job.schedule ?? prev.schedule,
           })
           .where(eq(pluginJobs.id, prev.id));
       } else {
         await db.insert(pluginJobs).values({
           pluginId,
-          jobKey: job.id,
-          schedule: job.cron,
+          jobKey: job.jobKey,
+          schedule: job.schedule ?? "0 0 * * *",
         });
       }
     }

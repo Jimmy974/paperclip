@@ -29,9 +29,10 @@ export const manifestSchema = z.object({
   jobs: z
     .array(
       z.object({
-        id: z.string().min(1),
+        jobKey: z.string().min(1),
         displayName: z.string().min(1),
-        cron: cronString,
+        description: z.string().optional(),
+        schedule: cronString.optional(),
       }),
     )
     .optional(),
