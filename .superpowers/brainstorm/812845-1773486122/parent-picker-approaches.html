@@ -1,0 +1,79 @@
+<h2>Where should the parent issue picker live?</h2>
+<p class="subtitle">Pick the approach that feels most natural for linking a new issue to an existing one.</p>
+
+<div class="cards">
+
+  <!-- Option A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f1117;border-radius:8px;padding:16px;font-family:sans-serif;font-size:12px;color:#e2e8f0;">
+        <div style="color:#64748b;font-size:10px;margin-bottom:6px;">NEW ISSUE</div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#94a3b8;margin-bottom:8px;">Issue title...</div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#64748b;height:40px;margin-bottom:10px;font-size:11px;">Description (optional)</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">● Todo</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">– Priority</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">⊕ Assignee</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">▦ Project</span>
+          <span style="background:#1e4080;border-radius:4px;padding:3px 8px;color:#93c5fd;font-size:11px;border:1px solid #3b82f6;">⤴ Parent issue</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Toolbar pill</h3>
+      <p>Add "Parent issue" as another inline selector in the bottom toolbar, same pattern as Project and Goal. Compact and consistent.</p>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f1117;border-radius:8px;padding:16px;font-family:sans-serif;font-size:12px;color:#e2e8f0;">
+        <div style="color:#64748b;font-size:10px;margin-bottom:6px;">NEW ISSUE</div>
+        <div style="background:#1e2533;border-radius:4px;padding:6px 10px;color:#94a3b8;margin-bottom:8px;display:flex;align-items:center;gap:6px;font-size:11px;">
+          <span style="color:#64748b;">⤴ Sub-issue of:</span>
+          <span style="background:#1e3a5f;border-radius:3px;padding:2px 6px;color:#93c5fd;font-size:11px;">Search or paste issue...</span>
+        </div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#94a3b8;margin-bottom:8px;">Issue title...</div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#64748b;height:40px;margin-bottom:10px;font-size:11px;">Description (optional)</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">● Todo</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">– Priority</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">⊕ Assignee</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">▦ Project</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Top row above title</h3>
+      <p>A "Sub-issue of:" row sits above the title field, making the parent relationship prominent and visible before you even start typing.</p>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f1117;border-radius:8px;padding:16px;font-family:sans-serif;font-size:12px;color:#e2e8f0;">
+        <div style="color:#64748b;font-size:10px;margin-bottom:6px;">NEW ISSUE</div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#94a3b8;margin-bottom:8px;">Issue title...</div>
+        <div style="background:#1e2533;border-radius:4px;padding:8px;color:#64748b;height:40px;margin-bottom:10px;font-size:11px;">Description (optional)</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">● Todo</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">– Priority</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">⊕ Assignee</span>
+          <span style="background:#1e2533;border-radius:4px;padding:3px 8px;color:#94a3b8;font-size:11px;">▦ Project</span>
+        </div>
+        <div style="border-top:1px solid #1e2533;padding-top:8px;display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;">
+          <span>🔗</span>
+          <span>Link to parent issue</span>
+          <span style="margin-left:auto;color:#3b82f6;cursor:pointer;">+ Add</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Footer link row</h3>
+      <p>A "Link to parent issue" row at the bottom of the dialog, below the toolbar. Optional and unobtrusive — only visible when you need it.</p>
+    </div>
+  </div>
+
+</div>
