@@ -1050,7 +1050,7 @@ export function issueRoutes(
       action: "issue.created",
       entityType: "issue",
       entityId: issue.id,
-      details: { title: issue.title, identifier: issue.identifier },
+      details: { title: issue.title, identifier: issue.identifier, assigneeUserId: issue.assigneeUserId, assigneeAgentId: issue.assigneeAgentId, issueId: issue.id },
     });
 
     getEventBus().emit("issue.created", {
@@ -1222,6 +1222,8 @@ export function issueRoutes(
       details: {
         ...updateFields,
         identifier: issue.identifier,
+        issueId: issue.id,
+        changes: Object.keys(updateFields).filter(k => k !== "updatedAt"),
         ...(commentBody ? { source: "comment" } : {}),
         ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus } : {}),
         ...(interruptedRunId ? { interruptedRunId } : {}),
