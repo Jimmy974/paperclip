@@ -706,7 +706,7 @@ function resolveLedgerBiller(result: AdapterExecutionResult): string {
 }
 
 function normalizeBilledCostCents(costUsd: number | null | undefined, billingType: BillingType): number {
-  if (billingType === "subscription_included") return 0;
+  // kt-home: record hypothetical cost for subscription plans too
   if (typeof costUsd !== "number" || !Number.isFinite(costUsd)) return 0;
   return Math.max(0, Math.round(costUsd * 100));
 }
