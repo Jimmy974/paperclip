@@ -122,7 +122,10 @@ export function visibleRunCostUsd(
   result: Record<string, unknown> | null = null,
 ): number {
   const billingType = coerceBillingType(usage?.billingType) ?? coerceBillingType(result?.billingType);
-  if (billingType === "subscription_included") return 0;
+  // kt-home: show hypothetical cost for subscription plans too
+  if (billingType === "subscription_included") {
+    return readRunCostUsd(usage) || readRunCostUsd(result);
+  }
   return readRunCostUsd(usage) || readRunCostUsd(result);
 }
 
