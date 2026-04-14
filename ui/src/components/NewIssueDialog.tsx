@@ -10,6 +10,7 @@ import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
+import { accessApi } from "../api/access";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -368,6 +369,11 @@ export function NewIssueDialog() {
     enabled: newIssueOpen,
     retry: false,
   });
+  const { data: memberUsers } = useQuery({
+    queryKey: queryKeys.access.memberUsers(effectiveCompanyId!),
+    queryFn: () => accessApi.listMemberUsers(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const activeProjects = useMemo(
     () => (projects ?? []).filter((p) => !p.archivedAt),
@@ -410,8 +416,16 @@ export function NewIssueDialog() {
         projectColor: project.color,
       });
     }
+    for (const user of (memberUsers ?? []).filter((u) => u.id !== currentUserId).sort((a, b) => a.name.localeCompare(b.name))) {
+      options.push({
+        id: `user:${user.id}`,
+        name: user.name,
+        kind: "user",
+        userId: user.id,
+      });
+    }
     return options;
-  }, [agents, orderedProjects]);
+  }, [agents, currentUserId, memberUsers, orderedProjects]);
 
   const { data: assigneeAdapterModels } = useQuery({
     queryKey:
@@ -893,8 +907,16 @@ export function NewIssueDialog() {
         label: agent.name,
         searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
       })),
+      ...(memberUsers ?? [])
+        .filter((u) => u.id !== currentUserId)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((u) => ({
+          id: assigneeValueFromSelection({ assigneeUserId: u.id }),
+          label: u.name,
+          searchText: u.name,
+        })),
     ],
-    [agents, currentUserId, recentAssigneeIds],
+    [agents, currentUserId, memberUsers, recentAssigneeIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>

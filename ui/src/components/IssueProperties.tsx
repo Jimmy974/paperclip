@@ -493,21 +493,29 @@ export function IssueProperties({
             Assign to me
           </button>
         )}
-        {issue.createdByUserId && issue.createdByUserId !== currentUserId && (
-          <button
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-              issue.assigneeUserId === issue.createdByUserId && "bg-accent",
-            )}
-            onClick={() => {
-              onUpdate({ assigneeAgentId: null, assigneeUserId: issue.createdByUserId });
-              setAssigneeOpen(false);
-            }}
-          >
-            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
-            {creatorUserLabel ? `Assign to ${creatorUserLabel}` : "Assign to requester"}
-          </button>
-        )}
+        {(memberUsers ?? [])
+          .filter((u) => u.id !== currentUserId)
+          .filter((u) => {
+            if (!assigneeSearch.trim()) return true;
+            return u.name.toLowerCase().includes(assigneeSearch.toLowerCase());
+          })
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((u) => (
+            <button
+              key={u.id}
+              className={cn(
+                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                issue.assigneeUserId === u.id && "bg-accent",
+              )}
+              onClick={() => {
+                onUpdate({ assigneeAgentId: null, assigneeUserId: u.id });
+                setAssigneeOpen(false);
+              }}
+            >
+              <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+              {u.name}
+            </button>
+          ))}
         {sortedAgents
           .filter((a) => {
             if (!assigneeSearch.trim()) return true;
