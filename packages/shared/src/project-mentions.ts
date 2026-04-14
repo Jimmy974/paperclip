@@ -1,6 +1,7 @@
 export const PROJECT_MENTION_SCHEME = "project://";
 export const AGENT_MENTION_SCHEME = "agent://";
 export const SKILL_MENTION_SCHEME = "skill://";
+export const USER_MENTION_SCHEME = "user://";
 
 const HEX_COLOR_RE = /^[0-9a-f]{6}$/i;
 const HEX_COLOR_SHORT_RE = /^[0-9a-f]{3}$/i;
@@ -109,6 +110,21 @@ export function parseAgentMentionHref(href: string): ParsedAgentMention | null {
     agentId,
     icon: normalizeAgentIcon(url.searchParams.get("i") ?? url.searchParams.get("icon")),
   };
+}
+
+export interface ParsedUserMention {
+  userId: string;
+}
+
+export function buildUserMentionHref(userId: string): string {
+  return `${USER_MENTION_SCHEME}${userId.trim()}`;
+}
+
+export function parseUserMentionHref(href: string): ParsedUserMention | null {
+  if (!href.startsWith(USER_MENTION_SCHEME)) return null;
+  const userId = href.slice(USER_MENTION_SCHEME.length).trim();
+  if (!userId) return null;
+  return { userId };
 }
 
 export function buildSkillMentionHref(skillId: string, slug?: string | null): string {
