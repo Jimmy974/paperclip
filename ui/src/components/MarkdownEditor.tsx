@@ -28,8 +28,8 @@ import {
   thematicBreakPlugin,
   type RealmPlugin,
 } from "@mdxeditor/editor";
-import { buildAgentMentionHref, buildProjectMentionHref } from "@paperclipai/shared";
-import { Boxes } from "lucide-react";
+import { buildAgentMentionHref, buildProjectMentionHref, buildUserMentionHref } from "@paperclipai/shared";
+import { Boxes, User } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 import { applyMentionChipDecoration, clearMentionChipDecoration, parseMentionChipHref } from "../lib/mention-chips";
 import { MentionAwareLinkNode, mentionAwareLinkNodeReplacement } from "../lib/mention-aware-link-node";
@@ -45,11 +45,12 @@ import { useEditorAutocomplete, type SkillCommandOption } from "../context/Edito
 export interface MentionOption {
   id: string;
   name: string;
-  kind?: "agent" | "project";
+  kind?: "agent" | "project" | "user";
   agentId?: string;
   agentIcon?: string | null;
   projectId?: string;
   projectColor?: string | null;
+  userId?: string;
 }
 
 /* ---- Editor props ---- */
@@ -284,6 +285,10 @@ function isSelectionInsideCodeLikeElement(container: HTMLElement | null) {
 function mentionMarkdown(option: MentionOption): string {
   if (option.kind === "project" && option.projectId) {
     return `[@${option.name}](${buildProjectMentionHref(option.projectId, option.projectColor ?? null)}) `;
+  }
+  if (option.kind === "user") {
+    const userId = option.userId ?? option.id.replace(/^user:/, "");
+    return `[@${option.name}](${buildUserMentionHref(userId)}) `;
   }
   const agentId = option.agentId ?? option.id.replace(/^agent:/, "");
   return `[@${option.name}](${buildAgentMentionHref(agentId, option.agentIcon ?? null)}) `;
@@ -594,6 +599,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         continue;
       }
 
+      if (parsed.kind === "user") {
+        applyMentionChipDecoration(link, parsed);
+        continue;
+      }
       const option = mentionOptionByKey.get(`agent:${parsed.agentId}`);
       applyMentionChipDecoration(link, {
         ...parsed,
@@ -935,6 +944,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                     className="inline-flex h-2 w-2 rounded-full border border-border/50"
                     style={{ backgroundColor: option.projectColor ?? "#64748b" }}
                   />
+                ) : option.kind === "user" ? (
+                  <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : (
                   <AgentIcon
                     icon={option.agentIcon}
@@ -942,6 +953,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                   />
                 )}
                 <span>{option.kind === "skill" ? `/${option.slug}` : option.name}</span>
+                {option.kind === "user" && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+                    User
+                  </span>
+                )}
                 {option.kind === "project" && option.projectId && (
                   <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
                     Project

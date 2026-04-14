@@ -8,6 +8,7 @@ import { activityApi, type RunForIssue } from "../api/activity";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { agentsApi } from "../api/agents";
+import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -547,6 +548,12 @@ export function IssueDetail() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: memberUsers } = useQuery({
+    queryKey: queryKeys.access.memberUsers(selectedCompanyId!),
+    queryFn: () => accessApi.listMemberUsers(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
@@ -638,8 +645,16 @@ export function IssueDetail() {
         projectColor: project.color,
       });
     }
+    for (const user of [...(memberUsers ?? [])].sort((a, b) => a.name.localeCompare(b.name))) {
+      options.push({
+        id: `user:${user.id}`,
+        name: user.name,
+        kind: "user",
+        userId: user.id,
+      });
+    }
     return options;
-  }, [agents, orderedProjects]);
+  }, [agents, orderedProjects, memberUsers]);
 
   const resolvedProject = useMemo(
     () => (issue?.projectId ? orderedProjects.find((project) => project.id === issue.projectId) ?? issue.project ?? null : null),

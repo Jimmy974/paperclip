@@ -642,18 +642,22 @@ export {
   AGENT_MENTION_SCHEME,
   PROJECT_MENTION_SCHEME,
   SKILL_MENTION_SCHEME,
+  USER_MENTION_SCHEME,
   buildAgentMentionHref,
   buildProjectMentionHref,
   buildSkillMentionHref,
+  buildUserMentionHref,
   extractAgentMentionIds,
   extractSkillMentionIds,
   parseAgentMentionHref,
   parseProjectMentionHref,
   parseSkillMentionHref,
+  parseUserMentionHref,
   extractProjectMentionIds,
   type ParsedAgentMention,
   type ParsedProjectMention,
   type ParsedSkillMention,
+  type ParsedUserMention,
 } from "./project-mentions.js";
 
 export {
