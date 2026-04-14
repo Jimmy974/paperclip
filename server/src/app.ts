@@ -24,6 +24,7 @@ import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
+import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
@@ -134,7 +135,7 @@ export async function createApp(
     });
   });
   if (opts.betterAuthHandler) {
-    app.all("/api/auth/*authPath", opts.betterAuthHandler);
+    app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
 
@@ -167,6 +168,7 @@ export async function createApp(
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
+  api.use(inboxDismissalRoutes(db));
   api.use(instanceSettingsRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
@@ -261,9 +263,22 @@ export async function createApp(
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
-      app.use(express.static(uiDist));
+      // Hashed assets can be cached indefinitely — filename changes on every build
+      app.use("/assets", express.static(path.join(uiDist, "assets"), { maxAge: "1y", immutable: true }));
+      // All other static files (favicon, manifest, etc.) — no cache; index.html always revalidated
+      app.use(
+        express.static(uiDist, {
+          maxAge: 0,
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith("index.html")) {
+              res.setHeader("Cache-Control", "no-cache");
+            }
+          },
+        }),
+      );
+      // SPA catch-all — always revalidate so browser picks up new asset hashes
       app.get(/.*/, (_req, res) => {
-        res.status(200).set("Content-Type", "text/html").end(indexHtml);
+        res.status(200).set("Content-Type", "text/html").set("Cache-Control", "no-cache").end(indexHtml);
       });
     } else {
       console.warn("[paperclip] UI dist not found; running in API-only mode");
