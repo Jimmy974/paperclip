@@ -290,7 +290,7 @@ export function Chatbot() {
       issuesApi.create(companyId, {
         title,
         originKind: "chatbot",
-        status: "in_progress",
+        status: "backlog",
         assigneeAgentId: agentId,
       }),
     onSuccess: (issue) => {
