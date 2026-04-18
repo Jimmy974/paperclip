@@ -176,6 +176,7 @@ export type IssueThreadInteractionContinuationPolicy =
 export const ISSUE_ORIGIN_KINDS = [
   "manual",
   "routine_execution",
+  "chatbot",
   "stale_active_run_evaluation",
   "harness_liveness_escalation",
   "issue_productivity_review",
