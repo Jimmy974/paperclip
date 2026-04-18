@@ -1,6 +1,7 @@
 import {
   Inbox,
   CircleDot,
+  MessageSquare,
   Target,
   LayoutDashboard,
   DollarSign,
@@ -104,6 +105,7 @@ export function Sidebar() {
           {showWorkspacesLink ? (
             <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
           ) : null}
+          <SidebarNavItem to="/chatbot" label="Chat" icon={MessageSquare} />
         </SidebarSection>
 
         <SidebarProjects />

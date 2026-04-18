@@ -2185,7 +2185,7 @@ export function issueService(db: Db) {
         );
       }
       if (filters?.excludeRoutineExecutions && !filters?.originKind && !filters?.originId) {
-        conditions.push(ne(issues.originKind, "routine_execution"));
+        conditions.push(notInArray(issues.originKind, ["routine_execution", "chatbot"]));
       }
       conditions.push(isNull(issues.hiddenAt));
 
