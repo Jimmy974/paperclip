@@ -174,7 +174,7 @@ function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps)
   });
 
   const addComment = useMutation({
-    mutationFn: (body: string) => issuesApi.addComment(session.id, body),
+    mutationFn: (body: string) => issuesApi.addComment(session.id, body, true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(session.id) });
     },
