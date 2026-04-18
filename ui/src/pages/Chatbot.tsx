@@ -243,12 +243,13 @@ function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps)
           comments={comments as IssueChatComment[]}
           linkedRuns={resolvedLinkedRuns}
           liveRuns={[]}
-          activeRun={resolvedActiveRun}
+          activeRun={null}
           companyId={companyId}
           issueStatus={session.status}
           agentMap={agentMap}
           draftKey={`chatbot-draft-${session.id}`}
           onAdd={handleAdd}
+          composerDisabledReason={hasLiveRuns ? "Agent is working..." : null}
         />
       </div>
     </div>
