@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, ExternalLink, MessageSquare, Plus } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, MessageSquare, Plus } from "lucide-react";
 import type { Agent, Issue, IssueComment } from "@paperclipai/shared";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 
@@ -131,9 +131,10 @@ interface ChatSessionProps {
   session: Issue;
   agentMap: Map<string, Agent>;
   companyId: string;
+  onBack?: () => void;
 }
 
-function ChatSession({ session, agentMap, companyId }: ChatSessionProps) {
+function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps) {
   const { openNewIssue } = useDialog();
   const queryClient = useQueryClient();
   const composerRef = useRef<IssueChatComposerHandle>(null);
@@ -212,7 +213,19 @@ function ChatSession({ session, agentMap, companyId }: ChatSessionProps) {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <h2 className="font-semibold text-sm truncate">{session.title}</h2>
+        <div className="flex items-center gap-2 min-w-0">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="md:hidden shrink-0"
+              onClick={onBack}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <h2 className="font-semibold text-sm truncate">{session.title}</h2>
+        </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={handleExportMd}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
@@ -229,7 +242,7 @@ function ChatSession({ session, agentMap, companyId }: ChatSessionProps) {
           composerRef={composerRef}
           comments={comments as IssueChatComment[]}
           linkedRuns={resolvedLinkedRuns}
-          liveRuns={liveRuns}
+          liveRuns={[]}
           activeRun={resolvedActiveRun}
           companyId={companyId}
           issueStatus={session.status}
@@ -281,9 +294,10 @@ export function Chatbot() {
         assigneeAgentId: agentId,
       }),
     onSuccess: (issue) => {
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.issues.list(companyId), "chatbot"],
-      });
+      queryClient.setQueryData(
+        [...queryKeys.issues.list(companyId), "chatbot"],
+        (old: Issue[] | undefined) => [issue, ...(old ?? [])],
+      );
       setSelectedSessionId(issue.id);
     },
   });
@@ -292,9 +306,17 @@ export function Chatbot() {
     await createSession.mutateAsync({ title, agentId });
   }
 
+  const showChatPanel = !!selectedSession;
+
   return (
     <div className="flex h-full w-full overflow-hidden">
-      <div className="w-64 flex flex-col border-r border-border shrink-0">
+      {/* Session list — always visible on md+, hidden on mobile when a session is selected */}
+      <div
+        className={cn(
+          "flex flex-col border-r border-border shrink-0 w-full md:w-64",
+          showChatPanel && "hidden md:flex",
+        )}
+      >
         <div className="flex items-center justify-between px-3 py-3 border-b border-border">
           <span className="text-sm font-semibold">Chats</span>
           <Button
@@ -336,13 +358,20 @@ export function Chatbot() {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 h-full overflow-hidden">
+      {/* Chat panel — full width on mobile, flex-1 on md+ */}
+      <div
+        className={cn(
+          "min-w-0 h-full overflow-hidden",
+          showChatPanel ? "flex flex-col flex-1" : "hidden md:flex md:flex-1",
+        )}
+      >
         {selectedSession ? (
           <ChatSession
             key={selectedSession.id}
             session={selectedSession}
             agentMap={agentMap}
             companyId={companyId}
+            onBack={() => setSelectedSessionId(null)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
