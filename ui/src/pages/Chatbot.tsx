@@ -4,8 +4,11 @@ import { activityApi } from "../api/activity";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
+import { projectsApi } from "../api/projects";
+import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
+import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDateTime, relativeTime } from "../lib/utils";
 import { resolveIssueActiveRun } from "../lib/issueActiveRun";
@@ -27,9 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, Download, ExternalLink, MessageSquare, Plus } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, MessageSquare, Plus, Trash2 } from "lucide-react";
 import type { Agent, Issue, IssueComment } from "@paperclipai/shared";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
+import type { MentionOption } from "@/components/MarkdownEditor";
 
 function defaultSessionTitle(): string {
   return `Chat — ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
@@ -180,11 +184,48 @@ function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps)
     },
   });
 
+  const uploadAttachment = useMutation({
+    mutationFn: (file: File) => issuesApi.uploadAttachment(companyId, session.id, file),
+  });
+
   const handleAdd = useCallback(
     async (body: string) => {
+      // If the agent unassigned itself after a run, re-assign before commenting so the wakeup fires.
+      if (!session.assigneeAgentId) {
+        const lastAgentComment = [...comments].reverse().find((c) => c.authorAgentId);
+        if (lastAgentComment?.authorAgentId) {
+          await issuesApi.update(session.id, { assigneeAgentId: lastAgentComment.authorAgentId, assigneeUserId: null });
+        }
+      }
       await addComment.mutateAsync(body);
     },
-    [addComment],
+    [addComment, session, comments],
+  );
+
+  const handleImageUpload = useCallback(
+    async (file: File) => {
+      const attachment = await uploadAttachment.mutateAsync(file);
+      return attachment.contentPath;
+    },
+    [uploadAttachment],
+  );
+
+  const handleAttachImage = useCallback(
+    async (file: File) => {
+      await uploadAttachment.mutateAsync(file);
+    },
+    [uploadAttachment],
+  );
+
+  const { data: projects = [] } = useQuery({
+    queryKey: queryKeys.projects.list(companyId),
+    queryFn: () => projectsApi.list(companyId),
+    enabled: !!companyId,
+  });
+
+  const mentionOptions = useMemo<MentionOption[]>(
+    () => buildMarkdownMentionOptions({ agents: Array.from(agentMap.values()), projects }),
+    [agentMap, projects],
   );
 
   const resolvedLinkedRuns = useMemo(
@@ -249,7 +290,11 @@ function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps)
           agentMap={agentMap}
           draftKey={`chatbot-draft-${session.id}`}
           onAdd={handleAdd}
+          imageUploadHandler={handleImageUpload}
+          onAttachImage={handleAttachImage}
+          mentions={mentionOptions}
           composerDisabledReason={hasLiveRuns ? "Agent is working..." : null}
+          fixedHeight
         />
       </div>
     </div>
@@ -261,7 +306,9 @@ export function Chatbot() {
   const companyId = selectedCompanyId!;
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [newChatOpen, setNewChatOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
 
   const { data: sessions = [] } = useQuery({
     queryKey: [...queryKeys.issues.list(companyId), "chatbot"],
@@ -303,8 +350,29 @@ export function Chatbot() {
     },
   });
 
+  const deleteSession = useMutation({
+    mutationFn: (id: string) => issuesApi.remove(id),
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(
+        [...queryKeys.issues.list(companyId), "chatbot"],
+        (old: Issue[] | undefined) => (old ?? []).filter((s) => s.id !== id),
+      );
+      if (selectedSessionId === id) setSelectedSessionId(null);
+      setConfirmDeleteId(null);
+    },
+    onError: (err) => {
+      setConfirmDeleteId(null);
+      pushToast({ title: "Failed to delete chat", body: String(err), tone: "error" });
+    },
+  });
+
   async function handleNewChat(title: string, agentId: string) {
     await createSession.mutateAsync({ title, agentId });
+  }
+
+  function handleDeleteClick(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    setConfirmDeleteId(id);
   }
 
   const showChatPanel = !!selectedSession;
@@ -340,20 +408,62 @@ export function Chatbot() {
             </div>
           ) : (
             sessions.map((session) => (
-              <button
-                key={session.id}
-                type="button"
-                onClick={() => setSelectedSessionId(session.id)}
-                className={cn(
-                  "w-full text-left px-3 py-2.5 text-sm hover:bg-accent/50 transition-colors",
-                  session.id === selectedSessionId && "bg-accent text-accent-foreground",
+              <div key={session.id} className="group relative">
+                {confirmDeleteId === session.id ? (
+                  <div
+                    className={cn(
+                      "px-3 py-2.5 text-sm",
+                      session.id === selectedSessionId && "bg-accent text-accent-foreground",
+                    )}
+                  >
+                    <p className="font-medium truncate mb-1.5">{session.title}</p>
+                    <p className="text-xs text-muted-foreground mb-2">Delete this chat?</p>
+                    <div className="flex gap-1.5">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-6 text-xs px-2"
+                        onClick={() => deleteSession.mutate(session.id)}
+                        disabled={deleteSession.isPending}
+                      >
+                        {deleteSession.isPending ? "Deleting..." : "Delete"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs px-2"
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={deleteSession.isPending}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      "flex items-center gap-1 hover:bg-accent/50 transition-colors cursor-pointer",
+                      session.id === selectedSessionId && "bg-accent text-accent-foreground",
+                    )}
+                    onClick={() => setSelectedSessionId(session.id)}
+                  >
+                    <div className="flex-1 min-w-0 px-3 py-2.5 text-sm">
+                      <div className="font-medium truncate">{session.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {relativeTime(session.createdAt)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteClick(e, session.id)}
+                      className="shrink-0 mr-2 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      title="Delete chat"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )}
-              >
-                <div className="font-medium truncate">{session.title}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {relativeTime(session.createdAt)}
-                </div>
-              </button>
+              </div>
             ))
           )}
         </div>

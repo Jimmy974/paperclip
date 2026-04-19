@@ -315,6 +315,7 @@ interface IssueChatThreadProps {
    * comment is in the loaded set before we scroll to it.
    */
   onRefreshLatestComments?: () => Promise<unknown> | void;
+  fixedHeight?: boolean;
 }
 
 type IssueChatErrorBoundaryProps = {
@@ -3089,6 +3090,7 @@ export function IssueChatThread({
   onSubmitInteractionAnswers,
   composerRef,
   onRefreshLatestComments,
+  fixedHeight = false,
 }: IssueChatThreadProps) {
   const location = useLocation();
   const lastScrolledHashRef = useRef<string | null>(null);
@@ -3480,7 +3482,11 @@ export function IssueChatThread({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <IssueChatCtx.Provider value={chatCtx}>
-      <div className={cn(variant === "embedded" ? "space-y-3" : "space-y-4")}>
+      <div className={cn(
+        fixedHeight
+          ? "flex flex-col h-full min-h-0"
+          : (variant === "embedded" ? "space-y-3" : "space-y-4"),
+      )}>
         {resolvedShowJumpToLatest ? (
           <div className="flex justify-end">
             <button
@@ -3502,7 +3508,10 @@ export function IssueChatThread({
           <div data-testid="thread-root">
             <div
               data-testid="thread-viewport"
-              className={variant === "embedded" ? "space-y-3" : "space-y-4"}
+              className={cn(
+                variant === "embedded" ? "space-y-3" : "space-y-4",
+                fixedHeight && "flex-1 min-h-0 overflow-y-auto px-0",
+              )}
             >
               {messages.length === 0 ? (
                 <div className={cn(
@@ -3564,7 +3573,11 @@ export function IssueChatThread({
           <div
             ref={composerViewportAnchorRef}
             data-testid="issue-chat-composer-dock"
-            className="sticky bottom-[calc(env(safe-area-inset-bottom)+20px)] z-20 space-y-2 bg-gradient-to-t from-background via-background/95 to-background/0 pt-6"
+            className={cn(
+              fixedHeight
+                ? "shrink-0 border-t border-border"
+                : "sticky bottom-[calc(env(safe-area-inset-bottom)+20px)] z-20 space-y-2 bg-gradient-to-t from-background via-background/95 to-background/0 pt-6",
+            )}
           >
             <IssueChatComposer
               ref={composerRef}
