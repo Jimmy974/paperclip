@@ -253,6 +253,7 @@ interface IssueChatThreadProps {
   stoppingRunId?: string | null;
   onImageClick?: (src: string) => void;
   composerRef?: Ref<IssueChatComposerHandle>;
+  fixedHeight?: boolean;
 }
 
 type IssueChatErrorBoundaryProps = {
@@ -1953,6 +1954,7 @@ export function IssueChatThread({
   stoppingRunId = null,
   onImageClick,
   composerRef,
+  fixedHeight = false,
 }: IssueChatThreadProps) {
   const location = useLocation();
   const hasScrolledRef = useRef(false);
@@ -2153,7 +2155,11 @@ export function IssueChatThread({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <IssueChatCtx.Provider value={chatCtx}>
-      <div className={cn(variant === "embedded" ? "space-y-3" : "space-y-4")}>
+      <div className={cn(
+        fixedHeight
+          ? "flex flex-col h-full min-h-0"
+          : (variant === "embedded" ? "space-y-3" : "space-y-4"),
+      )}>
         {resolvedShowJumpToLatest ? (
           <div className="flex justify-end">
             <button
@@ -2172,8 +2178,11 @@ export function IssueChatThread({
           emptyMessage={resolvedEmptyMessage}
           variant={variant}
         >
-          <ThreadPrimitive.Root className="">
-            <ThreadPrimitive.Viewport className={variant === "embedded" ? "space-y-3" : "space-y-4"}>
+          <ThreadPrimitive.Root className={cn(fixedHeight && "flex flex-col flex-1 min-h-0")}>
+            <ThreadPrimitive.Viewport className={cn(
+              variant === "embedded" ? "space-y-3" : "space-y-4",
+              fixedHeight && "flex-1 min-h-0 overflow-y-auto px-0",
+            )}>
               <ThreadPrimitive.Empty>
                 <div className={cn(
                   "text-center text-sm text-muted-foreground",
@@ -2191,7 +2200,7 @@ export function IssueChatThread({
         </IssueChatErrorBoundary>
 
         {showComposer ? (
-          <div ref={composerViewportAnchorRef}>
+          <div ref={composerViewportAnchorRef} className={cn(fixedHeight && "shrink-0 border-t border-border")}>
             <IssueChatComposer
               ref={composerRef}
               onImageUpload={imageUploadHandler}
