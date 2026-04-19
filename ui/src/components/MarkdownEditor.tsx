@@ -355,9 +355,8 @@ function mentionMarkdown(option: MentionOption): string {
   if (option.kind === "project" && option.projectId) {
     return `[@${option.name}](${buildProjectMentionHref(option.projectId, option.projectColor ?? null)}) `;
   }
-  if (option.kind === "user") {
-    const userId = option.userId ?? option.id.replace(/^user:/, "");
-    return `[@${option.name}](${buildUserMentionHref(userId)}) `;
+  if (option.kind === "user" && option.userId) {
+    return `[@${option.name}](${buildUserMentionHref(option.userId)}) `;
   }
   const agentId = option.agentId ?? option.id.replace(/^agent:/, "");
   return `[@${option.name}](${buildAgentMentionHref(agentId, option.agentIcon ?? null)}) `;
@@ -404,6 +403,9 @@ function autocompleteOptionMatchesLink(option: AutocompleteOption, href: string)
 
   if (option.kind === "project" && option.projectId) {
     return parsed.kind === "project" && parsed.projectId === option.projectId;
+  }
+  if (option.kind === "user" && option.userId) {
+    return parsed.kind === "user" && parsed.userId === option.userId;
   }
 
   const agentId = option.agentId ?? option.id.replace(/^agent:/, "");
@@ -531,6 +533,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       if (mention.kind === "agent") {
         const agentId = mention.agentId ?? mention.id.replace(/^agent:/, "");
         map.set(`agent:${agentId}`, mention);
+      }
+      if (mention.kind === "user" && mention.userId) {
+        map.set(`user:${mention.userId}`, mention);
       }
       if (mention.kind === "project" && mention.projectId) {
         map.set(`project:${mention.projectId}`, mention);
@@ -726,6 +731,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         applyMentionChipDecoration(link, parsed);
         continue;
       }
+
       const option = mentionOptionByKey.get(`agent:${parsed.agentId}`);
       applyMentionChipDecoration(link, {
         ...parsed,
@@ -1107,7 +1113,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         createPortal(
           <div
             className="fixed z-[9999] min-w-[180px] max-w-[calc(100vw-16px)] max-h-[200px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
-            style={mentionMenuPosition ?? undefined}
+            style={{
+              top: Math.min(mentionState.viewportTop + 4, window.innerHeight - 208),
+              left: Math.max(8, Math.min(mentionState.viewportLeft, window.innerWidth - 188)),
+            }}
           >
             {filteredMentions.map((option, i) => (
               <button
@@ -1151,6 +1160,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 {option.kind === "project" && option.projectId && (
                   <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
                     Project
+                  </span>
+                )}
+                {option.kind === "user" && (
+                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+                    User
                   </span>
                 )}
                 {option.kind === "skill" && (

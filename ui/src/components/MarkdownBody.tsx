@@ -226,8 +226,8 @@ export function MarkdownBody({
           : parsed.kind === "skill"
             ? `/skills/${parsed.skillId}`
             : parsed.kind === "user"
-              ? `/members/${parsed.userId}`
-              : `/agents/${parsed.agentId}`;
+              ? "/company/settings/access"
+            : `/agents/${parsed.agentId}`;
         return (
           <a
             href={targetHref}

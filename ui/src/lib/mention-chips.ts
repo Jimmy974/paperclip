@@ -15,6 +15,10 @@ export type ParsedMentionChip =
       color: string | null;
     }
   | {
+      kind: "user";
+      userId: string;
+    }
+  | {
       kind: "skill";
       skillId: string;
       slug: string | null;
@@ -42,6 +46,14 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
       kind: "project",
       projectId: project.projectId,
       color: project.color,
+    };
+  }
+
+  const user = parseUserMentionHref(href);
+  if (user) {
+    return {
+      kind: "user",
+      userId: user.userId,
     };
   }
 
@@ -109,6 +121,7 @@ export function clearMentionChipDecoration(element: HTMLElement) {
     "paperclip-mention-chip",
     "paperclip-mention-chip--agent",
     "paperclip-mention-chip--project",
+    "paperclip-mention-chip--user",
     "paperclip-mention-chip--skill",
     "paperclip-mention-chip--user",
     "paperclip-project-mention-chip",
