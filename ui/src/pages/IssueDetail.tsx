@@ -9,7 +9,6 @@ import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
-import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";

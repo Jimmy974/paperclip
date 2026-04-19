@@ -5,6 +5,7 @@ import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
+import { accessApi } from "../api/access";
 import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
@@ -223,9 +224,15 @@ function ChatSession({ session, agentMap, companyId, onBack }: ChatSessionProps)
     enabled: !!companyId,
   });
 
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
+    enabled: !!companyId,
+  });
+
   const mentionOptions = useMemo<MentionOption[]>(
-    () => buildMarkdownMentionOptions({ agents: Array.from(agentMap.values()), projects }),
-    [agentMap, projects],
+    () => buildMarkdownMentionOptions({ agents: Array.from(agentMap.values()), projects, members: companyMembers?.users }),
+    [agentMap, projects, companyMembers?.users],
   );
 
   const resolvedLinkedRuns = useMemo(

@@ -1162,11 +1162,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                     Project
                   </span>
                 )}
-                {option.kind === "user" && (
-                  <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
-                    User
-                  </span>
-                )}
                 {option.kind === "skill" && (
                   <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
                     Skill

@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "paperclip",
       cwd: "/home/clawdbot/paperclip",
-      script: "pnpm",
+      script: "/home/clawdbot/.npm-global/bin/pnpm",
       args: "dev",
       env: {
         BETTER_AUTH_SECRET: "01f5f8bf4cfb187bdfb583a7be1bf534ca4000abbc7bd5942156ff0033fd888d",

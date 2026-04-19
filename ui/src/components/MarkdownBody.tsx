@@ -221,12 +221,39 @@ export function MarkdownBody({
 
       const parsed = href ? parseMentionChipHref(href) : null;
       if (parsed) {
+        if (parsed.kind === "user") {
+          return (
+            <a
+              href={href}
+              className="paperclip-mention-chip paperclip-mention-chip--user"
+              data-mention-kind="user"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.25rem",
+                margin: "0 0.1rem",
+                padding: "0.05rem 0.45rem",
+                border: "1px solid var(--border)",
+                borderRadius: "999px",
+                fontSize: "0.75rem",
+                lineHeight: "1.3",
+                textDecoration: "none",
+                verticalAlign: "middle",
+                whiteSpace: "nowrap",
+                cursor: "default",
+                color: "inherit",
+                ...mentionChipInlineStyle(parsed),
+              }}
+              onClick={(e) => e.preventDefault()}
+            >
+              {linkChildren}
+            </a>
+          );
+        }
         const targetHref = parsed.kind === "project"
           ? `/projects/${parsed.projectId}`
           : parsed.kind === "skill"
             ? `/skills/${parsed.skillId}`
-            : parsed.kind === "user"
-              ? "/company/settings/access"
             : `/agents/${parsed.agentId}`;
         return (
           <a
