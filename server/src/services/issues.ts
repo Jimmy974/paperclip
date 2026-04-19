@@ -9,7 +9,10 @@ import {
   assets,
   companies,
   companyMemberships,
+  costEvents,
   documents,
+  feedbackVotes,
+  financeEvents,
   goals,
   heartbeatRuns,
   executionWorkspaces,
@@ -3013,6 +3016,16 @@ export function issueService(db: Db) {
           .select({ documentId: issueDocuments.documentId })
           .from(issueDocuments)
           .where(eq(issueDocuments.issueId, id));
+
+        // Null out parentId on child issues so they become top-level
+        await tx.update(issues).set({ parentId: null }).where(eq(issues.parentId, id));
+        // Delete rows in tables without ON DELETE CASCADE
+        await tx.delete(issueComments).where(eq(issueComments.issueId, id));
+        await tx.delete(issueReadStates).where(eq(issueReadStates.issueId, id));
+        await tx.delete(issueInboxArchives).where(eq(issueInboxArchives.issueId, id));
+        await tx.delete(feedbackVotes).where(eq(feedbackVotes.issueId, id));
+        await tx.update(financeEvents).set({ issueId: null }).where(eq(financeEvents.issueId, id));
+        await tx.update(costEvents).set({ issueId: null }).where(eq(costEvents.issueId, id));
 
         const removedIssue = await tx
           .delete(issues)
