@@ -4,6 +4,7 @@ import {
   ISSUE_EXECUTION_POLICY_MODES,
   ISSUE_EXECUTION_STAGE_TYPES,
   ISSUE_EXECUTION_STATE_STATUSES,
+  ISSUE_ORIGIN_KINDS,
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
 } from "../constants.js";
@@ -127,6 +128,7 @@ export const createIssueSchema = z.object({
   assigneeAgentId: z.string().uuid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),
   requestDepth: z.number().int().nonnegative().optional().default(0),
+  originKind: z.enum(ISSUE_ORIGIN_KINDS).optional(),
   billingCode: z.string().optional().nullable(),
   assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   executionPolicy: issueExecutionPolicySchema.optional().nullable(),
@@ -146,6 +148,7 @@ export const createIssueLabelSchema = z.object({
 export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
 export const updateIssueSchema = createIssueSchema.partial().extend({
+  assigneeAgentId: z.string().trim().min(1).optional().nullable(),
   comment: z.string().min(1).optional(),
   reopen: z.boolean().optional(),
   interrupt: z.boolean().optional(),

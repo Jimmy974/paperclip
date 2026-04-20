@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
@@ -6,7 +6,10 @@ import {
   assets,
   companies,
   companyMemberships,
+  costEvents,
   documents,
+  feedbackVotes,
+  financeEvents,
   goals,
   heartbeatRuns,
   executionWorkspaces,
@@ -79,6 +82,7 @@ export interface IssueFilters {
   originKind?: string;
   originId?: string;
   includeRoutineExecutions?: boolean;
+  excludeRoutineExecutions?: boolean;
   q?: string;
   limit?: number;
 }
@@ -131,6 +135,7 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
 }
 
 const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const ISSUE_LIST_DESCRIPTION_MAX_CHARS = 1200;
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -525,6 +530,51 @@ async function activeRunMapForIssues(
   }
   return map;
 }
+
+const issueListSelect = {
+  id: issues.id,
+  companyId: issues.companyId,
+  projectId: issues.projectId,
+  projectWorkspaceId: issues.projectWorkspaceId,
+  goalId: issues.goalId,
+  parentId: issues.parentId,
+  title: issues.title,
+  description: sql<string | null>`
+    CASE
+      WHEN ${issues.description} IS NULL THEN NULL
+      ELSE substring(${issues.description} FROM 1 FOR ${ISSUE_LIST_DESCRIPTION_MAX_CHARS})
+    END
+  `,
+  status: issues.status,
+  priority: issues.priority,
+  assigneeAgentId: issues.assigneeAgentId,
+  assigneeUserId: issues.assigneeUserId,
+  checkoutRunId: issues.checkoutRunId,
+  executionRunId: issues.executionRunId,
+  executionAgentNameKey: issues.executionAgentNameKey,
+  executionLockedAt: issues.executionLockedAt,
+  createdByAgentId: issues.createdByAgentId,
+  createdByUserId: issues.createdByUserId,
+  issueNumber: issues.issueNumber,
+  identifier: issues.identifier,
+  originKind: issues.originKind,
+  originId: issues.originId,
+  originRunId: issues.originRunId,
+  requestDepth: issues.requestDepth,
+  billingCode: issues.billingCode,
+  assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
+  executionPolicy: sql<null>`null`,
+  executionState: sql<null>`null`,
+  executionWorkspaceId: issues.executionWorkspaceId,
+  executionWorkspacePreference: issues.executionWorkspacePreference,
+  executionWorkspaceSettings: sql<null>`null`,
+  startedAt: issues.startedAt,
+  completedAt: issues.completedAt,
+  cancelledAt: issues.cancelledAt,
+  hiddenAt: issues.hiddenAt,
+  createdAt: issues.createdAt,
+  updatedAt: issues.updatedAt,
+};
 
 function withActiveRuns(
   issueRows: IssueWithLabels[],
@@ -967,6 +1017,9 @@ export function issueService(db: Db) {
       if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
       if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
       if (filters?.originId) conditions.push(eq(issues.originId, filters.originId));
+      if (!filters?.originKind && !filters?.originId) {
+        conditions.push(notInArray(issues.originKind, ["chatbot"]));
+      }
       if (filters?.labelId) {
         const labeledIssueIds = await db
           .select({ issueId: issueLabels.issueId })
@@ -985,8 +1038,8 @@ export function issueService(db: Db) {
           )!,
         );
       }
-      if (!filters?.includeRoutineExecutions && !filters?.originKind && !filters?.originId) {
-        conditions.push(ne(issues.originKind, "routine_execution"));
+      if (filters?.excludeRoutineExecutions && !filters?.originKind && !filters?.originId) {
+        conditions.push(notInArray(issues.originKind, ["routine_execution", "chatbot"]));
       }
       conditions.push(isNull(issues.hiddenAt));
 
@@ -1004,7 +1057,7 @@ export function issueService(db: Db) {
       `;
       const canonicalLastActivityAt = issueCanonicalLastActivityAtExpr(companyId);
       const baseQuery = db
-        .select()
+        .select(issueListSelect)
         .from(issues)
         .where(and(...conditions))
         .orderBy(
@@ -1162,7 +1215,6 @@ export function issueService(db: Db) {
         eq(issues.companyId, companyId),
         isNull(issues.hiddenAt),
         unreadForUserCondition(companyId, userId),
-        ne(issues.originKind, "routine_execution"),
       ];
       if (status) {
         const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
@@ -1707,6 +1759,16 @@ export function issueService(db: Db) {
           .from(issueDocuments)
           .where(eq(issueDocuments.issueId, id));
 
+        // Null out parentId on child issues so they become top-level
+        await tx.update(issues).set({ parentId: null }).where(eq(issues.parentId, id));
+        // Delete rows in tables without ON DELETE CASCADE
+        await tx.delete(issueComments).where(eq(issueComments.issueId, id));
+        await tx.delete(issueReadStates).where(eq(issueReadStates.issueId, id));
+        await tx.delete(issueInboxArchives).where(eq(issueInboxArchives.issueId, id));
+        await tx.delete(feedbackVotes).where(eq(feedbackVotes.issueId, id));
+        await tx.update(financeEvents).set({ issueId: null }).where(eq(financeEvents.issueId, id));
+        await tx.update(costEvents).set({ issueId: null }).where(eq(costEvents.issueId, id));
+
         const removedIssue = await tx
           .delete(issues)
           .where(eq(issues.id, id))
@@ -2112,6 +2174,28 @@ export function issueService(db: Db) {
           return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
         })),
 
+    removeComment: async (commentId: string) => {
+      const currentUserRedactionOptions = {
+        enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
+      };
+
+      return db.transaction(async (tx) => {
+        const [comment] = await tx
+          .delete(issueComments)
+          .where(eq(issueComments.id, commentId))
+          .returning();
+
+        if (!comment) return null;
+
+        await tx
+          .update(issues)
+          .set({ updatedAt: new Date() })
+          .where(eq(issues.id, comment.issueId));
+
+        return redactIssueComment(comment, currentUserRedactionOptions.enabled);
+      });
+    },
+
     addComment: async (
       issueId: string,
       body: string,
@@ -2328,7 +2412,10 @@ export function issueService(db: Db) {
       return [...resolved];
     },
 
-    findMentionedProjectIds: async (issueId: string) => {
+    findMentionedProjectIds: async (
+      issueId: string,
+      opts?: { includeCommentBodies?: boolean },
+    ) => {
       const issue = await db
         .select({
           companyId: issues.companyId,
@@ -2340,21 +2427,26 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!issue) return [];
 
-      const comments = await db
-        .select({ body: issueComments.body })
-        .from(issueComments)
-        .where(eq(issueComments.issueId, issueId));
-
       const mentionedIds = new Set<string>();
-      for (const source of [
-        issue.title,
-        issue.description ?? "",
-        ...comments.map((comment) => comment.body),
-      ]) {
+      for (const source of [issue.title, issue.description ?? ""]) {
         for (const projectId of extractProjectMentionIds(source)) {
           mentionedIds.add(projectId);
         }
       }
+
+      if (opts?.includeCommentBodies !== false) {
+        const comments = await db
+          .select({ body: issueComments.body })
+          .from(issueComments)
+          .where(eq(issueComments.issueId, issueId));
+
+        for (const comment of comments) {
+          for (const projectId of extractProjectMentionIds(comment.body)) {
+            mentionedIds.add(projectId);
+          }
+        }
+      }
+
       if (mentionedIds.size === 0) return [];
 
       const rows = await db

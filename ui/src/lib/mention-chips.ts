@@ -15,13 +15,13 @@ export type ParsedMentionChip =
       color: string | null;
     }
   | {
+      kind: "user";
+      userId: string;
+    }
+  | {
       kind: "skill";
       skillId: string;
       slug: string | null;
-    }
-  | {
-      kind: "user";
-      userId: string;
     };
 
 const iconMaskCache = new Map<string, string>();
@@ -45,6 +45,14 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
     };
   }
 
+  const user = parseUserMentionHref(href);
+  if (user) {
+    return {
+      kind: "user",
+      userId: user.userId,
+    };
+  }
+
   const skill = parseSkillMentionHref(href);
   if (skill) {
     return {
@@ -52,11 +60,6 @@ export function parseMentionChipHref(href: string): ParsedMentionChip | null {
       skillId: skill.skillId,
       slug: skill.slug,
     };
-  }
-
-  const user = parseUserMentionHref(href);
-  if (user) {
-    return { kind: "user", userId: user.userId };
   }
 
   return null;
@@ -109,8 +112,8 @@ export function clearMentionChipDecoration(element: HTMLElement) {
     "paperclip-mention-chip",
     "paperclip-mention-chip--agent",
     "paperclip-mention-chip--project",
-    "paperclip-mention-chip--skill",
     "paperclip-mention-chip--user",
+    "paperclip-mention-chip--skill",
     "paperclip-project-mention-chip",
   );
   element.removeAttribute("contenteditable");
