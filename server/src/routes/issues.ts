@@ -1335,6 +1335,35 @@ export function issueRoutes(
       await assertCanAssignTasks(req, companyId);
     }
 
+    // Duplicate-sibling guard: under one parent, the same agent must not have
+    // two non-terminal subtasks at once. Prevents the teamleader-duplicate
+    // pipeline pattern observed in TOP-91/92, TOP-93/94, TOP-103/104.
+    // Override with header X-Paperclip-Allow-Duplicate-Sibling: true when a
+    // legitimately parallel same-agent sibling is needed.
+    const allowDuplicateSibling =
+      req.header("x-paperclip-allow-duplicate-sibling") === "true";
+    if (!allowDuplicateSibling && req.body.parentId && req.body.assigneeAgentId) {
+      const siblings = await svc.list(companyId, {
+        parentId: req.body.parentId,
+        assigneeAgentId: req.body.assigneeAgentId,
+      });
+      const TERMINAL_STATUSES = new Set(["done", "cancelled"]);
+      const conflict = siblings.find((s) => !TERMINAL_STATUSES.has(s.status));
+      if (conflict) {
+        res.status(409).json({
+          error: "duplicate_sibling_subtask",
+          message:
+            `An open sibling subtask assigned to this agent already exists ` +
+            `under the same parent: ${conflict.identifier} (status: ${conflict.status}). ` +
+            `Comment on it instead, or pass header X-Paperclip-Allow-Duplicate-Sibling: true to override.`,
+          conflictingIssueId: conflict.id,
+          conflictingIdentifier: conflict.identifier,
+          conflictingStatus: conflict.status,
+        });
+        return;
+      }
+    }
+
     const actor = getActorInfo(req);
     const executionPolicy = normalizeIssueExecutionPolicy(req.body.executionPolicy);
     const issue = await svc.create(companyId, {
