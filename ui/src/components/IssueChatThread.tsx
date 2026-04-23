@@ -2425,10 +2425,16 @@ export function IssueChatThread({
           emptyMessage={resolvedEmptyMessage}
           variant={variant}
         >
-          <div data-testid="thread-root">
+          <div
+            data-testid="thread-root"
+            className={cn(fixedHeight && "flex flex-col flex-1 min-h-0")}
+          >
             <div
               data-testid="thread-viewport"
-              className={variant === "embedded" ? "space-y-3" : "space-y-4"}
+              className={cn(
+                variant === "embedded" ? "space-y-3" : "space-y-4",
+                fixedHeight && "flex-1 min-h-0 overflow-y-auto px-0",
+              )}
             >
               {messages.length === 0 ? (
                 <div className={cn(
