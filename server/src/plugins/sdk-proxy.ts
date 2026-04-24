@@ -168,6 +168,24 @@ function buildHostServices(db: Db, pluginId: string): HostServices {
       },
     },
 
+    telemetry: {
+      async track(_params) {
+        // Silently no-op for now
+      },
+    },
+
+    db: {
+      async namespace(_params) {
+        throw new Error("Plugin host service not implemented: db.namespace");
+      },
+      async query(_params) {
+        throw new Error("Plugin host service not implemented: db.query");
+      },
+      async execute(_params) {
+        throw new Error("Plugin host service not implemented: db.execute");
+      },
+    },
+
     logger: {
       async log(params) {
         console.log(`[plugin:${pluginId}:${params.level}] ${params.message}`, params.meta ?? {});
@@ -204,10 +222,40 @@ function buildHostServices(db: Db, pluginId: string): HostServices {
         const svc = await getServices();
         return svc.issues.update(params.issueId, params.patch as any) as any;
       },
+      async getRelations(_params) {
+        throw new Error("Plugin host service not implemented: issues.getRelations");
+      },
+      async setBlockedBy(_params) {
+        throw new Error("Plugin host service not implemented: issues.setBlockedBy");
+      },
+      async addBlockers(_params) {
+        throw new Error("Plugin host service not implemented: issues.addBlockers");
+      },
+      async removeBlockers(_params) {
+        throw new Error("Plugin host service not implemented: issues.removeBlockers");
+      },
+      async assertCheckoutOwner(_params) {
+        throw new Error("Plugin host service not implemented: issues.assertCheckoutOwner");
+      },
+      async getSubtree(_params) {
+        throw new Error("Plugin host service not implemented: issues.getSubtree");
+      },
+      async requestWakeup(_params) {
+        throw new Error("Plugin host service not implemented: issues.requestWakeup");
+      },
+      async requestWakeups(_params) {
+        throw new Error("Plugin host service not implemented: issues.requestWakeups");
+      },
+      async getOrchestrationSummary(_params) {
+        throw new Error("Plugin host service not implemented: issues.getOrchestrationSummary");
+      },
       async listComments(_params) { return []; },
       async createComment(params) {
         const svc = await getServices();
         return svc.issues.addComment(params.issueId, params.body, {}) as any;
+      },
+      async createInteraction(_params) {
+        throw new Error("Plugin host service not implemented: issues.createInteraction");
       },
     },
 

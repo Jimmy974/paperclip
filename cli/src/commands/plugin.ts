@@ -175,15 +175,14 @@ export function registerPluginCommands(program: Command) {
       for (const row of rows) {
         console.log(`\n=== ${row.pluginKey} v${row.version} ===`);
         console.log(`  Status: ${row.status}`);
-        console.log(`  Capabilities: ${row.capabilities.join(", ")}`);
-        console.log(`  Install path: ${row.installPath}`);
+        console.log(`  Package: ${row.packageName}${row.packagePath ? ` (${row.packagePath})` : ""}`);
         if (row.lastError) console.log(`  Last error: ${row.lastError}`);
 
         const jobs = await db.select().from(pluginJobs).where(eq(pluginJobs.pluginId, row.id));
         if (jobs.length > 0) {
           console.log(`  Jobs:`);
           for (const job of jobs) {
-            console.log(`    ${job.jobKey}: ${job.cron} (enabled: ${job.enabled}, next: ${job.nextRunAt?.toISOString() ?? "N/A"})`);
+            console.log(`    ${job.jobKey}: ${job.schedule} (status: ${job.status}, next: ${job.nextRunAt?.toISOString() ?? "N/A"})`);
           }
         }
       }
