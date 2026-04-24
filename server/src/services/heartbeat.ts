@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { readFileSync as fsReadFileSync } from "node:fs";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -1686,27 +1685,10 @@ function isHeartbeatRunTerminalStatus(
 // A positive liveness check means some process currently owns the PID.
 // On Linux, PIDs can be recycled, so this is a best-effort signal rather
 // than proof that the original child is still alive.
-//
-// Treats zombie/defunct processes (state Z on Linux) as NOT alive — kill(pid, 0)
-// succeeds for zombies because the PID still exists in the kernel process table,
-// but a zombie has already exited and will never produce more output. Without
-// this filter, paperclip's reaper sees a zombie as "alive" and leaves the run
-// stuck in `running` until the 1-hour safety timeout.
 function isProcessAlive(pid: number | null | undefined) {
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    // Filter zombies on platforms exposing /proc (Linux). On other platforms
-    // /proc is unavailable; we fall through and trust the kill(pid, 0) result.
-    try {
-      const status = fsReadFileSync(`/proc/${pid}/status`, "utf8");
-      // /proc/<pid>/status format: a "State:\t<letter> (<word>)" line.
-      // States we treat as NOT alive: Z (zombie), X (dead, rare).
-      if (/^State:\s+[ZX]\b/m.test(status)) return false;
-    } catch {
-      // /proc not available or no permission to read this PID's status.
-      // Fall through to the kill(pid, 0) result.
-    }
     return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | undefined)?.code;
