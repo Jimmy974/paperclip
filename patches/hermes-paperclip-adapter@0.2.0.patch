@@ -1,0 +1,41 @@
+diff --git a/dist/server/execute.js b/dist/server/execute.js
+index 93cddf8243271f5fb3ab101617f9114257e41328..1bc3d6b7e8e640ce6a12669d0e59e10d21379310 100644
+--- a/dist/server/execute.js
++++ b/dist/server/execute.js
+@@ -15,6 +15,8 @@
+  *   -v/--verbose       verbose output
+  *   --checkpoints      filesystem checkpoints
+  */
++import fs from "node:fs/promises";
++import path from "node:path";
+ import { runChildProcess, buildPaperclipEnv, renderTemplate, ensureAbsoluteDirectory, } from "@paperclipai/adapter-utils/server-utils";
+ import { HERMES_CLI, DEFAULT_TIMEOUT_SEC, DEFAULT_GRACE_SEC, VALID_PROVIDERS, } from "../shared/constants.js";
+ // ---------------------------------------------------------------------------
+@@ -253,8 +255,26 @@ export async function execute(ctx) {
+     const persistSession = cfgBoolean(config.persistSession) !== false;
+     const worktreeMode = cfgBoolean(config.worktreeMode) === true;
+     const checkpoints = cfgBoolean(config.checkpoints) === true;
++    // ── Load instructionsFilePath (PR #35 backport) ────────────────────────
++    const instructionsFilePath = cfgString(config.instructionsFilePath);
++    let agentInstructions = "";
++    if (instructionsFilePath) {
++        try {
++            agentInstructions = await fs.readFile(instructionsFilePath, "utf-8");
++            const instructionsFileDir = path.dirname(instructionsFilePath);
++            agentInstructions += `\nThe above agent instructions were loaded from ${instructionsFilePath}. Resolve any relative file references from ${instructionsFileDir}/.`;
++            await ctx.onLog("stdout", `[hermes] Loaded agent instructions from ${instructionsFilePath} (${agentInstructions.length} chars)\n`);
++        }
++        catch (err) {
++            const reason = err instanceof Error ? err.message : String(err);
++            await ctx.onLog("stderr", `[hermes] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`);
++        }
++    }
+     // ── Build prompt ───────────────────────────────────────────────────────
+-    const prompt = buildPrompt(ctx, config);
++    let prompt = buildPrompt(ctx, config);
++    if (agentInstructions) {
++        prompt = agentInstructions + "\n\n---\n\n" + prompt;
++    }
+     // ── Build command args ─────────────────────────────────────────────────
+     // Use -Q (quiet) to get clean output: just response + session_id line
+     const useQuiet = cfgBoolean(config.quiet) !== false; // default true
