@@ -1,0 +1,67 @@
+# Paperclip + Agent Tools — extends the base Paperclip image with CLIs and utilities
+# Tools installed inside the container so it's self-contained (no host mounts needed)
+
+ARG PAPERCLIP_BASE=docker-server
+FROM ${PAPERCLIP_BASE}:latest
+
+USER root
+
+# System tools (most useful for agents)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ripgrep \
+    fd-find \
+    bat \
+    tree \
+    jq \
+    httpie \
+    git \
+    curl \
+    wget \
+    unzip \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
+    apt-get update && apt-get install -y --no-install-recommends gh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Docker CLI + Compose plugin (no daemon — talks to agent-deploy-sock via DOCKER_HOST env)
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# AI Coding CLIs (npm-based)
+RUN npm install -g \
+    @anthropic-ai/claude-code \
+    @openai/codex \
+    @google/gemini-cli
+
+# Python tools: Graphify + Hermes Agent — use pipx with system-wide binaries
+ENV PIPX_HOME=/opt/pipx \
+    PIPX_BIN_DIR=/usr/local/bin
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip pipx && \
+    pipx install graphifyy && \
+    pipx install git+https://github.com/NousResearch/hermes-agent.git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Symlinks for Debian-renamed tools (rg already correct, but fd/bat use suffixed names)
+RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd && \
+    ln -sf /usr/bin/batcat /usr/local/bin/bat
+
+# Auth dir symlinks: HOME=/paperclip (Paperclip's runtime volume) but bind mounts go to /home/paperclip
+# These symlinks ensure tools find their auth tokens at $HOME/.<tool>
+# Note: /paperclip is a volume, so symlinks created here persist via paperclip-data volume on first init
+RUN mkdir -p /paperclip/.config && \
+    ln -sf /home/paperclip/.claude /paperclip/.claude && \
+    ln -sf /home/paperclip/.codex /paperclip/.codex && \
+    ln -sf /home/paperclip/.gemini /paperclip/.gemini && \
+    ln -sf /home/paperclip/.hermes /paperclip/.hermes && \
+    ln -sf /home/paperclip/.config/gh /paperclip/.config/gh
+
+# Inherits USER, ENTRYPOINT and CMD from base image (entrypoint handles user switching)

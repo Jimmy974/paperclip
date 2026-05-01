@@ -1,0 +1,68 @@
+# simon-oracle-fork local overrides.
+# Upstream docker-compose.yml stays vanilla so `git pull` from upstream
+# never conflicts with local environment changes.
+#
+# What lives here:
+#   - host-specific paths (/home/ubuntu/...)
+#   - simon-oracle-specific UID/GID (host ubuntu uses 1001)
+#   - port bindings restricted to 127.0.0.1
+#   - devops agent integration (DOCKER_HOST, CF env, dev-deploy mount)
+#   - image name + Dockerfile.tools build override
+#
+# What lives in .env (sibling of this file):
+#   - secrets (BETTER_AUTH_SECRET, PAPERCLIP_AGENT_JWT_SECRET)
+#   - environment-specific values (PAPERCLIP_PUBLIC_URL, OPENAI_*, OPENROUTER_*,
+#     CLOUDFLARE_*)
+
+services:
+  db:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:5432:5432"
+
+  server:
+    restart: unless-stopped
+    build:
+      dockerfile: docker/Dockerfile.tools
+      args:
+        PAPERCLIP_BASE: docker-server
+    image: paperclip-with-tools:latest
+    ports: !override
+      - "127.0.0.1:3100:3100"
+    environment:
+      # Container runtime
+      HOME: /home/paperclip
+      USER_UID: "1001"
+      USER_GID: "1001"
+      # LLM provider routing (values in .env)
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_API_BASE: "${OPENAI_API_BASE:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      # Devops agent: filtered Docker daemon access via agent-deploy-sock
+      # (paperclip joins dev-net so it can reach the proxy by container name)
+      DOCKER_HOST: "tcp://agent-deploy-sock:2375"
+      # Devops agent: Cloudflare DNS (values in .env when token issued)
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+      CLOUDFLARE_ZONE_ID: "${CLOUDFLARE_ZONE_ID:-}"
+    volumes:
+      # Workspace + shared skills
+      - /home/ubuntu/project:/home/paperclip/workspace
+      - /home/ubuntu/workspace/skills:/home/paperclip/skills:ro
+      # Devops agent's deploy workspace (audit + manual cleanup possible from host)
+      - /home/ubuntu/dev-deploy:/home/paperclip/dev-deploy
+      # Auth — directory mounts (not single-file) so OAuth token refresh
+      # doesn't strand the inode on atomic-replace writes
+      - /home/ubuntu/.claude:/home/paperclip/.claude
+      - /home/ubuntu/.claude.json:/home/paperclip/.claude.json:rw
+      - /home/ubuntu/.codex:/home/paperclip/.codex
+      - /home/ubuntu/.config/gh:/home/paperclip/.config/gh:ro
+      - /home/ubuntu/.hermes:/home/paperclip/.hermes
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - dev-net
+
+networks:
+  dev-net:
+    external: true
