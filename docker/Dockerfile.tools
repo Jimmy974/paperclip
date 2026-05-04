@@ -64,4 +64,16 @@ RUN mkdir -p /paperclip/.config && \
     ln -sf /home/paperclip/.hermes /paperclip/.hermes && \
     ln -sf /home/paperclip/.config/gh /paperclip/.config/gh
 
+# Bake a minimal /home/paperclip/.claude.json stub so claude-code init never fails.
+# - Single-file bind mounts get stranded by atomic-replace (we removed the host mount).
+# - Container's writable layer is reset on recreate, so the stub is restored every start.
+# - Owned by the runtime UID (1001 — matches USER_UID env in compose).
+ARG PAPERCLIP_UID=1001
+ARG PAPERCLIP_GID=1001
+RUN mkdir -p /home/paperclip && \
+    echo '{}' > /home/paperclip/.claude.json && \
+    chown -R ${PAPERCLIP_UID}:${PAPERCLIP_GID} /home/paperclip && \
+    chmod 755 /home/paperclip && \
+    chmod 644 /home/paperclip/.claude.json
+
 # Inherits USER, ENTRYPOINT and CMD from base image (entrypoint handles user switching)
