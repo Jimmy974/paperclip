@@ -314,7 +314,7 @@ describe("IssueChatThread", () => {
     markdownBodyRenderMock.mockClear();
   });
 
-  it("drops the count heading and does not use an internal scrollbox", () => {
+  it("drops the count heading and does not use an internal scrollbox by default", () => {
     const root = createRoot(container);
 
     act(() => {
@@ -340,6 +340,39 @@ describe("IssueChatThread", () => {
     expect(viewport).not.toBeNull();
     expect(viewport?.className).not.toContain("overflow-y-auto");
     expect(viewport?.className).not.toContain("max-h-[70vh]");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("restores the scroll container when fixedHeight is set", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <IssueChatThread
+            comments={[]}
+            linkedRuns={[]}
+            timelineEvents={[]}
+            liveRuns={[]}
+            onAdd={async () => {}}
+            showComposer={false}
+            enableLiveTranscriptPolling={false}
+            fixedHeight
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    const threadRoot = container.querySelector('[data-testid="thread-root"]') as HTMLDivElement | null;
+    const viewport = container.querySelector('[data-testid="thread-viewport"]') as HTMLDivElement | null;
+    expect(threadRoot?.className).toContain("flex-1");
+    expect(threadRoot?.className).toContain("min-h-0");
+    expect(viewport?.className).toContain("flex-1");
+    expect(viewport?.className).toContain("min-h-0");
+    expect(viewport?.className).toContain("overflow-y-auto");
 
     act(() => {
       root.unmount();

@@ -3505,7 +3505,10 @@ export function IssueChatThread({
           emptyMessage={resolvedEmptyMessage}
           variant={variant}
         >
-          <div data-testid="thread-root">
+          <div
+            data-testid="thread-root"
+            className={cn(fixedHeight && "flex flex-col flex-1 min-h-0")}
+          >
             <div
               data-testid="thread-viewport"
               className={cn(
