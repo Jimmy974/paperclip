@@ -77,3 +77,31 @@ RUN mkdir -p /home/paperclip && \
     chmod 644 /home/paperclip/.claude.json
 
 # Inherits USER, ENTRYPOINT and CMD from base image (entrypoint handles user switching)
+
+# ── Custom plugins ────────────────────────────────────────────────────────────
+# Stage: build ktsang.issue-templates and pre-stage for volume sync on startup
+# The plugin source lives in packages/plugins/paperclip-issue-templates/ in the repo.
+# On container start, the entrypoint copies /bundled-plugins/ → /paperclip/plugins/.
+
+COPY packages/plugins/paperclip-issue-templates /bundled-plugins-src/paperclip-issue-templates/
+
+RUN set -e; \
+    PLUGIN_DIR=/bundled-plugins-src/paperclip-issue-templates; \
+    cd /app/packages/shared && npm pack --pack-destination /tmp/; \
+    cd /app/packages/plugins/sdk && npm pack --pack-destination /tmp/; \
+    mkdir -p $PLUGIN_DIR/.paperclip-sdk; \
+    cp /tmp/paperclipai-shared-*.tgz $PLUGIN_DIR/.paperclip-sdk/paperclipai-shared-0.3.1.tgz; \
+    cp /tmp/paperclipai-plugin-sdk-*.tgz $PLUGIN_DIR/.paperclip-sdk/paperclipai-plugin-sdk-1.0.0.tgz; \
+    cd $PLUGIN_DIR && rm -f pnpm-lock.yaml && pnpm install; \
+    SHARED_PKG=$(find $PLUGIN_DIR/node_modules/.pnpm -maxdepth 1 -name '@paperclipai+shared@*' -type d | head -1); \
+    if [ -n "$SHARED_PKG" ]; then \
+      rm -rf "$SHARED_PKG/node_modules/@paperclipai/shared/dist"; \
+      cp -r /app/packages/shared/dist "$SHARED_PKG/node_modules/@paperclipai/shared/dist"; \
+    fi; \
+    node $PLUGIN_DIR/esbuild.config.mjs; \
+    mkdir -p /bundled-plugins/paperclip-issue-templates; \
+    cp -r $PLUGIN_DIR/dist /bundled-plugins/paperclip-issue-templates/; \
+    cp -r $PLUGIN_DIR/src /bundled-plugins/paperclip-issue-templates/; \
+    cp $PLUGIN_DIR/package.json /bundled-plugins/paperclip-issue-templates/; \
+    cp $PLUGIN_DIR/esbuild.config.mjs /bundled-plugins/paperclip-issue-templates/; \
+    rm -rf /bundled-plugins-src

@@ -26,4 +26,17 @@ if [ "$changed" = "1" ]; then
     chown -R node:node /paperclip
 fi
 
+# Sync bundled plugins (baked into image) into the data volume on every start.
+# This ensures custom plugins are always up to date with the image version.
+if [ -d /bundled-plugins ]; then
+    for plugin_dir in /bundled-plugins/*/; do
+        plugin_name=$(basename "$plugin_dir")
+        target_dir="/paperclip/plugins/$plugin_name"
+        echo "Syncing bundled plugin: $plugin_name"
+        mkdir -p "$target_dir"
+        cp -r "$plugin_dir/." "$target_dir/"
+        chown -R node:node "$target_dir" 2>/dev/null || true
+    done
+fi
+
 exec gosu node "$@"
