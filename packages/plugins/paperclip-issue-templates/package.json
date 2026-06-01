@@ -21,8 +21,8 @@
   "author": "ktsang",
   "license": "UNLICENSED",
   "dependencies": {
-    "@paperclipai/plugin-sdk": "file:.paperclip-sdk/paperclipai-plugin-sdk-1.0.0.tgz",
-    "@paperclipai/shared": "file:.paperclip-sdk/paperclipai-shared-0.3.1.tgz"
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "@paperclipai/shared": "workspace:*"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.1",
@@ -37,10 +37,5 @@
   },
   "peerDependencies": {
     "react": ">=18"
-  },
-  "pnpm": {
-    "overrides": {
-      "@paperclipai/shared": "file:.paperclip-sdk/paperclipai-shared-0.3.1.tgz"
-    }
   }
 }
