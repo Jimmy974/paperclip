@@ -46,26 +46,26 @@ const plugin = definePlugin({
     const cfg = config as TemplateConfig | null;
     if (cfg?.entries) {
       if (!Array.isArray(cfg.entries)) {
-        return { valid: false, message: "entries must be an array" };
+        return { ok: false, errors: ["entries must be an array"] };
       }
       const keys = new Set<string>();
       for (const entry of cfg.entries) {
         if (!entry.key || typeof entry.key !== "string") {
-          return { valid: false, message: "Each entry must have a string key" };
+          return { ok: false, errors: ["Each entry must have a string key"] };
         }
         if (!entry.label || typeof entry.label !== "string") {
-          return { valid: false, message: `Entry "${entry.key}" must have a label` };
+          return { ok: false, errors: [`Entry "${entry.key}" must have a label`] };
         }
         if (typeof entry.template !== "string") {
-          return { valid: false, message: `Entry "${entry.key}" must have a template string` };
+          return { ok: false, errors: [`Entry "${entry.key}" must have a template string`] };
         }
         if (keys.has(entry.key)) {
-          return { valid: false, message: `Duplicate key: "${entry.key}"` };
+          return { ok: false, errors: [`Duplicate key: "${entry.key}"`] };
         }
         keys.add(entry.key);
       }
     }
-    return { valid: true };
+    return { ok: true };
   },
 
   async onConfigChanged(_config) {
