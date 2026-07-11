@@ -90,9 +90,9 @@ vi.mock("../lib/issue-chat-scroll", async (importOriginal) => {
 });
 
 vi.mock("./MarkdownBody", () => ({
-  MarkdownBody: ({ children }: { children: ReactNode }) => {
-    markdownBodyRenderMock(children);
-    return <div>{children}</div>;
+  MarkdownBody: ({ children, className }: { children: ReactNode; className?: string }) => {
+    markdownBodyRenderMock({ children, className });
+    return <div className={className}>{children}</div>;
   },
 }));
 
@@ -273,7 +273,7 @@ function createExpiredRequestConfirmationInteraction(
     resolvedAt: new Date("2026-04-06T12:05:00.000Z"),
     payload: {
       version: 1,
-      prompt: "Approve the plan and let the assignee start implementation?",
+      prompt: "Approve the plan and let the responsible start implementation?",
       acceptLabel: "Approve plan",
       rejectLabel: "Request revisions",
     },
@@ -387,6 +387,48 @@ describe("IssueChatThread", () => {
     });
   });
 
+  it("uses accent-safe markdown color in the current user's blue message bubble", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <IssueChatThread
+            comments={[{
+              id: "comment-current-user",
+              companyId: "company-1",
+              issueId: "issue-1",
+              authorAgentId: null,
+              authorUserId: "user-board",
+              authorType: "user",
+              body: "1. **Readable** markdown on blue",
+              presentation: null,
+              metadata: null,
+              createdAt: new Date("2026-04-06T12:00:00.000Z"),
+              updatedAt: new Date("2026-04-06T12:00:00.000Z"),
+            }]}
+            linkedRuns={[]}
+            timelineEvents={[]}
+            liveRuns={[]}
+            currentUserId="user-board"
+            onAdd={async () => {}}
+            showComposer={false}
+            enableLiveTranscriptPolling={false}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    expect(markdownBodyRenderMock).toHaveBeenCalledWith(expect.objectContaining({
+      children: "1. **Readable** markdown on blue",
+      className: expect.stringContaining("paperclip-markdown-on-accent"),
+    }));
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("labels operator-interrupted cancelled runs as interrupted while preserving plain cancelled runs", () => {
     const root = createRoot(container);
     const linkedRuns: IssueChatLinkedRun[] = [
@@ -445,6 +487,11 @@ describe("IssueChatThread", () => {
     const execCommand = vi.fn(() => true);
     const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     const originalExecCommand = Object.getOwnPropertyDescriptor(document, "execCommand");
+    const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: false,
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: clipboardWrite },
@@ -493,7 +540,7 @@ describe("IssueChatThread", () => {
         await Promise.resolve();
       });
 
-      expect(clipboardWrite).toHaveBeenCalledWith("Copy this comment");
+      expect(clipboardWrite).not.toHaveBeenCalled();
       expect(execCommand).toHaveBeenCalledWith("copy");
 
       act(() => {
@@ -511,6 +558,12 @@ describe("IssueChatThread", () => {
       } else {
         // @ts-expect-error test cleanup for optional browser API
         delete document.execCommand;
+      }
+      if (originalSecureContext) {
+        Object.defineProperty(window, "isSecureContext", originalSecureContext);
+      } else {
+        // @ts-expect-error test cleanup for optional browser API
+        delete window.isSecureContext;
       }
     }
   });
@@ -1984,7 +2037,7 @@ describe("IssueChatThread", () => {
     });
 
     expect(container.textContent).toContain("Work on this task is blocked by the linked task");
-    expect(container.textContent).toContain("Comments still wake the assignee for questions or triage");
+    expect(container.textContent).toContain("Comments still wake the responsible for questions or triage");
     expect(container.textContent).toContain("PAP-1723");
     expect(container.textContent).toContain("QA the install flow");
     expect(container.querySelector('[data-issue-path-id="PAP-1723"]')).not.toBeNull();
@@ -2047,7 +2100,7 @@ describe("IssueChatThread", () => {
     });
   });
 
-  it("shows paused assigned agent context above the composer", () => {
+  it("shows paused responsible agent context above the composer", () => {
     const root = createRoot(container);
     const pausedAgent = {
       id: "agent-1",
@@ -2982,7 +3035,7 @@ describe("IssueChatThread", () => {
             onAdd={async () => {}}
             enableReassign
             reassignOptions={[
-              { id: "", label: "No assignee" },
+              { id: "", label: "No responsible" },
               { id: "agent:agent-1", label: "Agent 1" },
             ]}
             currentAssigneeValue=""
@@ -3016,7 +3069,7 @@ describe("IssueChatThread", () => {
     expect(appendMock).not.toHaveBeenCalled();
     const dialog = document.querySelector('[data-testid="issue-chat-no-assignee-dialog"]');
     expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain("No assignee selected");
+    expect(dialog?.textContent).toContain("No responsible selected");
     expect(dialog?.textContent).toContain("no agent will be woken");
 
     const sendAnyway = document.querySelector(
@@ -3055,7 +3108,7 @@ describe("IssueChatThread", () => {
             onAdd={async () => {}}
             enableReassign
             reassignOptions={[
-              { id: "", label: "No assignee" },
+              { id: "", label: "No responsible" },
               { id: "agent:agent-1", label: "Agent 1" },
             ]}
             currentAssigneeValue=""
@@ -3097,7 +3150,7 @@ describe("IssueChatThread", () => {
 
     expect(appendMock).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="issue-chat-no-assignee-dialog"]')).toBeNull();
-    // The composer keeps the draft so the user can pick an assignee and resend.
+    // The composer keeps the draft so the user can pick a responsible and resend.
     const editorAfter = container.querySelector('textarea[aria-label="Issue chat editor"]') as HTMLTextAreaElement | null;
     expect(editorAfter?.value).toBe("Reply without assignee");
 
@@ -3120,7 +3173,7 @@ describe("IssueChatThread", () => {
             onAdd={async () => {}}
             enableReassign
             reassignOptions={[
-              { id: "", label: "No assignee" },
+              { id: "", label: "No responsible" },
               { id: "agent:agent-1", label: "Agent 1" },
             ]}
             currentAssigneeValue="agent:agent-1"
@@ -3150,7 +3203,7 @@ describe("IssueChatThread", () => {
     });
 
     expect(appendMock).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).not.toContain("No assignee selected");
+    expect(document.body.textContent).not.toContain("No responsible selected");
 
     act(() => {
       root.unmount();
@@ -3444,6 +3497,8 @@ describe("IssueChatThread", () => {
               adapterType: "codex_local",
               currentStatusMessage: "Syncing git worktree to sandbox",
               currentStatusUpdatedAt: "2026-04-06T12:00:05.000Z",
+              currentToolName: "bash",
+              lastEventAt: new Date(Date.now() - 2000).toISOString(),
             }}
             onAdd={async () => {}}
             enableLiveTranscriptPolling={false}
@@ -3453,8 +3508,9 @@ describe("IssueChatThread", () => {
     });
 
     expect(container.textContent).toContain("Working...");
-    expect(container.textContent).toContain("Syncing git worktree to sandbox");
-    expect(container.querySelector('[title="Syncing git worktree to sandbox"]')).not.toBeNull();
+    expect(container.textContent).toContain("Using bash");
+    expect(container.textContent).not.toContain("last activity");
+    expect(container.textContent).toMatch(/\d+ seconds? ago/);
 
     act(() => {
       root.unmount();
