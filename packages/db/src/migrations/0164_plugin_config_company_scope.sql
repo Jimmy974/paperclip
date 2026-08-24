@@ -35,6 +35,12 @@ WHERE pc."company_id" IS NULL
 
 DROP INDEX IF EXISTS "plugin_config_plugin_id_idx";--> statement-breakpoint
 
+-- Legacy schemas also created this as a UNIQUE constraint rather than a plain
+-- index. Drop it before duplicating instance-global rows across companies; the
+-- replacement uniqueness is (plugin_id, company_id) below.
+ALTER TABLE "plugin_config"
+  DROP CONSTRAINT IF EXISTS "plugin_config_plugin_id_unique";--> statement-breakpoint
+
 WITH unbound_config AS (
   SELECT pc.*
   FROM "plugin_config" pc
