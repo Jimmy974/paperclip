@@ -1899,6 +1899,80 @@ export function normalizePaperclipWakePayload(
   };
 }
 
+// Linux rejects any single argv/env string at or above MAX_ARG_STRLEN (32 × PAGE_SIZE,
+// 131 072 bytes on 4 KiB pages) with E2BIG, before the child process exists. The
+// stringified payload is exported as one env var (PAPERCLIP_WAKE_PAYLOAD_JSON) and
+// `executionContinuation.messages` carries the whole comment thread, so a long thread
+// made an issue permanently un-wakeable (upstream paperclipai/paperclip#13662). Keep a
+// margin for the rest of the environment block; the prompt still carries the full
+// continuation over ACP stdio, and the agent can fetch the thread through the API.
+export const PAPERCLIP_WAKE_PAYLOAD_MAX_BYTES = 100_000;
+
+function paperclipWakePayloadBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function trimMessagesToFit<T extends { messages?: unknown }>(
+  envelope: T,
+  fits: (candidate: T) => boolean,
+): { envelope: T; dropped: number } {
+  const messages = Array.isArray(envelope.messages) ? envelope.messages : [];
+  let keep = messages.length;
+  let candidate = envelope;
+  while (keep > 0) {
+    keep = Math.floor(keep / 2);
+    candidate = { ...envelope, messages: messages.slice(messages.length - keep) };
+    if (fits(candidate)) break;
+  }
+  return { envelope: candidate, dropped: messages.length - keep };
+}
+
+export function boundPaperclipWakePayload(
+  payload: PaperclipWakePayload,
+  maxBytes: number = PAPERCLIP_WAKE_PAYLOAD_MAX_BYTES,
+): PaperclipWakePayload {
+  if (paperclipWakePayloadBytes(payload) <= maxBytes) return payload;
+  let bounded: PaperclipWakePayload = { ...payload, fallbackFetchNeeded: true, truncated: true };
+  const fits = (candidate: PaperclipWakePayload) => paperclipWakePayloadBytes(candidate) <= maxBytes;
+
+  // 1. Keep the newest continuation messages that fit (the bulk of the payload).
+  if (bounded.executionContinuation) {
+    const { envelope } = trimMessagesToFit(
+      bounded.executionContinuation,
+      (candidate) => fits({ ...bounded, executionContinuation: candidate }),
+    );
+    bounded = { ...bounded, executionContinuation: envelope };
+    if (fits(bounded)) return bounded;
+    // 2. Then the resume delta, then the continuation as a whole.
+    const { resumeDelta, ...withoutDelta } = bounded.executionContinuation as ExecutionContinuationEnvelope & {
+      resumeDelta?: unknown;
+    };
+    void resumeDelta;
+    bounded = { ...bounded, executionContinuation: withoutDelta as ExecutionContinuationEnvelope };
+    if (fits(bounded)) return bounded;
+    bounded = { ...bounded, executionContinuation: null };
+    if (fits(bounded)) return bounded;
+  }
+  // 3. Then the inline comment window.
+  if (bounded.comments.length > 0) {
+    const { envelope } = trimMessagesToFit(
+      { messages: bounded.comments },
+      (candidate) => fits({ ...bounded, comments: candidate.messages as typeof bounded.comments }),
+    );
+    bounded = { ...bounded, comments: envelope.messages as typeof bounded.comments };
+    if (fits(bounded)) return bounded;
+  }
+  // 4. Finally the issue description (upstream #13959: an oversized description alone
+  //    can exceed the limit).
+  if (bounded.issue?.description) {
+    bounded = {
+      ...bounded,
+      issue: { ...bounded.issue, description: null, descriptionTruncated: true },
+    };
+  }
+  return bounded;
+}
+
 export function stringifyPaperclipWakePayload(
   value: unknown,
   options: {
@@ -1911,16 +1985,18 @@ export function stringifyPaperclipWakePayload(
   const normalized = normalizePaperclipWakePayload(value);
   if (!normalized) return null;
   if (options.omitIssueDescription === true && normalized.issue) {
-    return JSON.stringify({
-      ...normalized,
-      issue: {
-        ...normalized.issue,
-        description: null,
-        descriptionTruncated: false,
-      },
-    });
+    return JSON.stringify(
+      boundPaperclipWakePayload({
+        ...normalized,
+        issue: {
+          ...normalized.issue,
+          description: null,
+          descriptionTruncated: false,
+        },
+      }),
+    );
   }
-  return JSON.stringify(normalized);
+  return JSON.stringify(boundPaperclipWakePayload(normalized));
 }
 
 /** Source ownership only. Canonical task, plan, response and event data stay in their existing fields. */
