@@ -7,6 +7,16 @@ export const HEARTBEAT_RUN_RESULT_SUMMARY_MAX_CHARS = 500;
 export const HEARTBEAT_RUN_RESULT_OUTPUT_MAX_CHARS = 4_096;
 export const HEARTBEAT_RUN_SAFE_RESULT_JSON_MAX_BYTES = 64 * 1024;
 
+/** Operator diagnostics are untrusted provider data, not model handoff prose. */
+export function summarizeRunErrorForModel(error: string | null, terminalFailureCategory?: unknown): string | null {
+  if (terminalFailureCategory == null) return error;
+  const category = typeof terminalFailureCategory === "string"
+    && ["connection", "access", "limit", "service", "request", "unknown"].includes(terminalFailureCategory)
+    ? terminalFailureCategory
+    : "unknown";
+  return `ACP agent reported a terminal ${category} failure. Provider diagnostics are available in the run record.`;
+}
+
 function truncateSummaryText(
   value: unknown,
   maxLength = HEARTBEAT_RUN_RESULT_SUMMARY_MAX_CHARS,
@@ -184,11 +194,20 @@ function record(value: unknown): Record<string, unknown> {
 
 export function isExternalChatPresentationContext(
   contextSnapshot: unknown,
+  verifiedToolReviewChatOrigin = false,
 ): boolean {
   const context = record(contextSnapshot);
   const wake = record(context.paperclipWake);
   const source =
     typeof context.source === "string" ? context.source.trim() : "";
+  // Approvals and Board comments also resume ordinary internal tasks. Only
+  // durable source-run or mirrored-comment proof authorizes an external reply.
+  if (
+    source === "tool_action_review" ||
+    source.startsWith("issue.comment") ||
+    source === "issue.update"
+  )
+    return verifiedToolReviewChatOrigin;
   return (
     source.startsWith("chat:") ||
     context.externalChatContinuation === true ||
@@ -556,13 +575,14 @@ export function buildHeartbeatRunIssueComment(
   return resolveHeartbeatRunResponse({ resultJson }).text;
 }
 
-export function findHeartbeatRunCompletionComment<T extends { id: string }>(
+export function findHeartbeatRunCompletionComment<T extends { id: string; presentation?: unknown }>(
   comments: T[],
   resultJson: Record<string, unknown> | null | undefined,
 ): T | null {
+  const completionComments = comments.filter(comment => record(comment.presentation).kind !== "system_notice");
   const receipts = resultJson?.semanticToolReceipts;
   if (!receipts || typeof receipts !== "object" || Array.isArray(receipts)) {
-    return comments[0] ?? null;
+    return completionComments[0] ?? null;
   }
 
   const generatedCommentIds = new Set<string>();
@@ -597,6 +617,6 @@ export function findHeartbeatRunCompletionComment<T extends { id: string }>(
   }
 
   return (
-    comments.find((comment) => !generatedCommentIds.has(comment.id)) ?? null
+    completionComments.find((comment) => !generatedCommentIds.has(comment.id)) ?? null
   );
 }
